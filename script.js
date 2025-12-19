@@ -507,7 +507,7 @@ function handleMovement() {
     right.y = 0;
     right.normalize();
     
-    const moveSpeed = 3;
+    const moveSpeed = 6;
     let moveDirection = new BABYLON.Vector3(0, 0, 0);
     let hasInput = false;
 
@@ -806,17 +806,25 @@ socket.on('ballShot', (ballData) => {
     ball.position.set(ballData.x, ballData.y, ballData.z);
     ball.physicsImpostor = new BABYLON.PhysicsImpostor(ball, BABYLON.PhysicsImpostor.SphereImpostor, {mass: 0.5, restitution: 0.5}, scene);
     
-    // Check for collision with player to cancel ultimate
+    // Apply impulse in the direction it was shot
+    const dir = new BABYLON.Vector3(ballData.dirX, ballData.dirY, ballData.dirZ);
+    ball.physicsImpostor.applyImpulse(dir.scale(15), ball.getAbsolutePosition());
+
+    // Check for collision with player
     ball.physicsImpostor.registerOnPhysicsCollide(playerPhysicsBody.physicsImpostor, () => {
+        // Apply massive knockback to player when hit
+        const knockbackStrength = 3; 
+        const knockbackDir = dir.clone();
+        knockbackDir.y += 0.5; // Add some lift
+        knockbackDir.normalize();
+        
+        playerPhysicsBody.physicsImpostor.applyImpulse(knockbackDir.scale(knockbackStrength), playerPhysicsBody.getAbsolutePosition());
+        
         if (isChargingUltimate) {
             cancelUltimate();
             console.log('Ultimate cancelled - hit by ball!');
         }
     });
-    
-    // Apply impulse in the direction it was shot
-    const dir = new BABYLON.Vector3(ballData.dirX, ballData.dirY, ballData.dirZ);
-    ball.physicsImpostor.applyImpulse(dir.scale(15), ball.getAbsolutePosition());
     
     // Remove ball after 5 seconds
     setTimeout(() => {
@@ -961,6 +969,12 @@ function playShootAnimation() {
 // Prevent default context menu
 canvas.oncontextmenu = function(e) { e.preventDefault(); };
 
+// Fire rate limits
+let canShoot = true;
+let canBuild = true;
+const SHOOT_COOLDOWN = 150; // ms
+const BUILD_COOLDOWN = 200; // ms
+
 // Use Babylon.js pointer observable for proper pointer lock support
 scene.onPointerObservable.add((pointerInfo) => {
     if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
@@ -975,6 +989,11 @@ scene.onPointerObservable.add((pointerInfo) => {
         
         if (button === 0) {
             // Left click - shoot ball
+            if (!canShoot) return; // Fire rate limit
+            
+            canShoot = false;
+            setTimeout(() => { canShoot = true; }, SHOOT_COOLDOWN);
+
             playShootAnimation(); // One arm punch animation
             
             const shootDir = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
@@ -1001,6 +1020,11 @@ scene.onPointerObservable.add((pointerInfo) => {
             });
         } else if (button === 2) {
             // Right click - spawn block
+            if (!canBuild) return; // Build rate limit
+            
+            canBuild = false;
+            setTimeout(() => { canBuild = true; }, BUILD_COOLDOWN);
+            
             playBuildAnimation();
             
             const sizeval = 0.1 + (size.value / 100) * 2.9; // Range: 0.1 (tiny) to 3 (large)
