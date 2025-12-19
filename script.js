@@ -7,11 +7,7 @@ const slimyToggle = document.getElementById("slimyToggle");
 const menureveal = document.getElementById("menureveal");
 const size = document.getElementById("sizeToggle");
 const clearBtn = document.getElementById("clearBtn");
-const loadingScreen = document.getElementById("loadingScreen");
 const engine = new BABYLON.Engine(canvas, true);
-
-// Track if player is in contact with another object
-let playerInContact = false;
 
 const socket = io();
 const otherPlayers = {};
@@ -19,26 +15,139 @@ const spawnedBlocks = [];
 
 // Register as a player when connected
 socket.on('connect', () => {
+    console.log('Socket connected:', socket.id);
     socket.emit('registerPlayer');
+});
+
+socket.on('disconnect', () => {
+    console.log('Socket disconnected!');
+});
+
+socket.on('connect_error', (error) => {
+    console.error('Socket connection error:', error);
 });
 
 // Third person toggle state
 let isThirdPerson = false;
 
+// Helper to set visibility on all child meshes of a character
+function setPlayerMeshVisibility(characterRoot, visible) {
+    const children = characterRoot.getChildMeshes();
+    children.forEach(child => {
+        child.isVisible = visible;
+    });
+}
+
 // Active key state tracking
 const keysPressed = {};
 
-// Create a simple sphere mesh for players
-function createPlayerSphere(scene, name, color) {
-    const sphere = BABYLON.MeshBuilder.CreateSphere(name, {diameter: 1.5, segments: 16}, scene);
+// Create a humanoid character mesh
+function createCharacterMesh(scene, name, color) {
+    const characterRoot = new BABYLON.TransformNode(name, scene);
+    
     const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
     mat.diffuseColor = color;
-    mat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
-    sphere.material = mat;
-    return sphere;
+    mat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+    
+    // Helper function to setup mesh and prevent culling issues
+    function setupMesh(mesh) {
+        mesh.material = mat;
+        mesh.parent = characterRoot;
+        mesh.alwaysSelectAsActiveMesh = true; // Prevent frustum culling
+    }
+    
+    // Body (torso)
+    const body = BABYLON.MeshBuilder.CreateCylinder(name + "Body", {
+        height: 0.8, 
+        diameterTop: 0.5, 
+        diameterBottom: 0.6
+    }, scene);
+    body.position.y = 0.4;
+    setupMesh(body);
+    
+    // Head
+    const head = BABYLON.MeshBuilder.CreateSphere(name + "Head", {
+        diameter: 0.5, 
+        segments: 16
+    }, scene);
+    head.position.y = 1.05;
+    setupMesh(head);
+    
+    // Eyes
+    const eyeMat = new BABYLON.StandardMaterial(name + "EyeMat", scene);
+    eyeMat.diffuseColor = new BABYLON.Color3(1, 1, 1);
+    eyeMat.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0.3);
+    
+    const leftEye = BABYLON.MeshBuilder.CreateSphere(name + "LeftEye", {diameter: 0.1}, scene);
+    leftEye.position.set(-0.1, 1.1, 0.2);
+    leftEye.material = eyeMat;
+    leftEye.parent = characterRoot;
+    leftEye.alwaysSelectAsActiveMesh = true;
+    
+    const rightEye = BABYLON.MeshBuilder.CreateSphere(name + "RightEye", {diameter: 0.1}, scene);
+    rightEye.position.set(0.1, 1.1, 0.2);
+    rightEye.material = eyeMat;
+    rightEye.parent = characterRoot;
+    rightEye.alwaysSelectAsActiveMesh = true;
+    
+    // Pupils
+    const pupilMat = new BABYLON.StandardMaterial(name + "PupilMat", scene);
+    pupilMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+    
+    const leftPupil = BABYLON.MeshBuilder.CreateSphere(name + "LeftPupil", {diameter: 0.05}, scene);
+    leftPupil.position.set(-0.1, 1.1, 0.24);
+    leftPupil.material = pupilMat;
+    leftPupil.parent = characterRoot;
+    leftPupil.alwaysSelectAsActiveMesh = true;
+    
+    const rightPupil = BABYLON.MeshBuilder.CreateSphere(name + "RightPupil", {diameter: 0.05}, scene);
+    rightPupil.position.set(0.1, 1.1, 0.24);
+    rightPupil.material = pupilMat;
+    rightPupil.parent = characterRoot;
+    rightPupil.alwaysSelectAsActiveMesh = true;
+    
+    // Left Arm
+    const leftArm = BABYLON.MeshBuilder.CreateCapsule(name + "LeftArm", {
+        height: 0.6, 
+        radius: 0.1
+    }, scene);
+    leftArm.position.set(-0.4, 0.5, 0);
+    leftArm.rotation.z = Math.PI / 6;
+    setupMesh(leftArm);
+    
+    // Right Arm
+    const rightArm = BABYLON.MeshBuilder.CreateCapsule(name + "RightArm", {
+        height: 0.6, 
+        radius: 0.1
+    }, scene);
+    rightArm.position.set(0.4, 0.5, 0);
+    rightArm.rotation.z = -Math.PI / 6;
+    setupMesh(rightArm);
+    
+    // Left Leg
+    const leftLeg = BABYLON.MeshBuilder.CreateCapsule(name + "LeftLeg", {
+        height: 0.6, 
+        radius: 0.12
+    }, scene);
+    leftLeg.position.set(-0.15, -0.3, 0);
+    setupMesh(leftLeg);
+    
+    // Right Leg
+    const rightLeg = BABYLON.MeshBuilder.CreateCapsule(name + "RightLeg", {
+        height: 0.6, 
+        radius: 0.12
+    }, scene);
+    rightLeg.position.set(0.15, -0.3, 0);
+    setupMesh(rightLeg);
+    
+    // Store arm references for animation
+    characterRoot.leftArm = leftArm;
+    characterRoot.rightArm = rightArm;
+    
+    return characterRoot;
 }
 
-var createSceneWithoutPlayer = function () {
+var createScene = function () {
     var scene = new BABYLON.Scene(engine);
     scene.collisionsEnabled = true;
     scene.enablePhysics(new BABYLON.Vector3(0,-9.81, 0), new BABYLON.AmmoJSPlugin);
@@ -95,6 +204,16 @@ var createSceneWithoutPlayer = function () {
     var skybox = BABYLON.MeshBuilder.CreateSphere("skybox", {segments:32, diameter:100}, scene);
     skybox.material = bluemat;
 
+    // Player physics body (invisible sphere for physics)
+    playerPhysicsBody = BABYLON.MeshBuilder.CreateSphere("playerPhysics", {diameter:1.5, segments:8}, scene);
+    playerPhysicsBody.position.y = 3;
+    playerPhysicsBody.visibility = 0;
+    playerPhysicsBody.physicsImpostor = new BABYLON.PhysicsImpostor(playerPhysicsBody, BABYLON.PhysicsImpostor.SphereImpostor, {mass:1, restitution:0.3, friction: 0.5}, scene);
+    
+    // Player visual mesh (humanoid character)
+    player = createCharacterMesh(scene, "player", new BABYLON.Color3(0.2, 0.6, 1));
+    player.position.y = 3;
+
     frontfacing = BABYLON.Mesh.CreateBox("front", 1, scene);
     frontfacing.visibility = 0.5;
     var frontMat = new BABYLON.StandardMaterial("frontMat", scene);
@@ -105,83 +224,54 @@ var createSceneWithoutPlayer = function () {
     // Jump reload
     jumpreloading = false;
 
-    return scene;
-};
-
-function createPlayer(scene) {
-    // Player sphere (visible, with physics)
-    player = BABYLON.MeshBuilder.CreateSphere("player", {diameter: 1.5, segments: 16}, scene);
-    player.position.y = 3;
-    const playerMat = new BABYLON.StandardMaterial("playerMat", scene);
-    playerMat.diffuseColor = new BABYLON.Color3(0.2, 0.6, 1);
-    playerMat.specularColor = new BABYLON.Color3(0.3, 0.3, 0.3);
-    player.material = playerMat;
-    player.physicsImpostor = new BABYLON.PhysicsImpostor(player, BABYLON.PhysicsImpostor.SphereImpostor, {mass: 1, restitution: 0.3, friction: 0.5}, scene);
-    
-    // Use player directly as the physics body
-    playerPhysicsBody = player;
-    
-    // Register collision callback to track contact state
-    player.physicsImpostor.registerOnPhysicsCollide([], function(main, collided) {
-        playerInContact = true;
-    });
-    
-    // Set up collision detection with all physics objects
     scene.registerBeforeRender(function() {
-        // Reset contact flag each frame - will be set by collision callback if touching
-        playerInContact = false;
+        // Sync player visual mesh to physics body
+        player.position.copyFrom(playerPhysicsBody.position);
+        player.position.y -= 0.5; // Offset for character feet
         
-        // Check for collisions using ray casts in multiple directions
-        const rayLength = 0.85; // Slightly more than sphere radius (0.75)
-        const directions = [
-            new BABYLON.Vector3(0, -1, 0),  // Down
-            new BABYLON.Vector3(0, 1, 0),   // Up
-            new BABYLON.Vector3(1, 0, 0),   // Right
-            new BABYLON.Vector3(-1, 0, 0),  // Left
-            new BABYLON.Vector3(0, 0, 1),   // Forward
-            new BABYLON.Vector3(0, 0, -1)   // Back
-        ];
+        // Calculate character facing direction from camera look direction
+        var lookDir = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
+        player.rotation.y = Math.atan2(lookDir.x, lookDir.z); // Face where camera looks
         
-        for (const dir of directions) {
-            const ray = new BABYLON.Ray(player.position, dir, rayLength);
-            const hit = scene.pickWithRay(ray, function(mesh) {
-                return mesh !== player && mesh.name !== "skybox" && mesh.name !== "front";
-            });
-            if (hit && hit.hit) {
-                playerInContact = true;
-                break;
-            }
-        }
-        
+        // Camera follows player
         if (!isThirdPerson) {
-            camera.position.set(player.position.x, player.position.y + 0.5, player.position.z);
+            camera.position.set(playerPhysicsBody.position.x, playerPhysicsBody.position.y + 0.5, playerPhysicsBody.position.z);
+            // Hide player in first person
+            setPlayerMeshVisibility(player, false);
         } else {
             var forward = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
-            camera.position = player.position.subtract(forward.scale(8)).add(new BABYLON.Vector3(0, 3, 0));
+            camera.position = playerPhysicsBody.position.subtract(forward.scale(8)).add(new BABYLON.Vector3(0, 3, 0));
+            // Show player in third person
+            setPlayerMeshVisibility(player, true);
         }
 
         // Update frontfacing position
         var forward = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
-        frontfacing.position = player.position.add(forward.scale(5));
+        frontfacing.position = playerPhysicsBody.position.add(forward.scale(5));
         
         // Continuous movement based on active keys
         handleMovement();
         
-        // Emit player movement
-        if (player && player.physicsImpostor) {
-            const pos = player.getAbsolutePosition();
-            socket.emit('playerMovement', {
-                x: pos.x,
-                y: pos.y,
-                z: pos.z,
-                rotation: camera.rotation.y
-            });
+        // Emit player movement using volatile (faster, won't queue)
+        if (playerPhysicsBody && playerPhysicsBody.physicsImpostor && socket.connected) {
+            const pos = playerPhysicsBody.getAbsolutePosition();
+            
+            // Skip sending if position looks invalid
+            if (pos.y >= 0.3) {
+                socket.volatile.emit('playerMovement', {
+                    x: pos.x,
+                    y: pos.y,
+                    z: pos.z,
+                    rotation: player.rotation.y // Send calculated facing direction
+                });
+            }
         }
     });
-}
+    return scene;
+};
 
 function handleMovement() {
-    if (!player || !player.physicsImpostor) return;
+    if (!playerPhysicsBody || !playerPhysicsBody.physicsImpostor) return;
     
     var forward = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
     var right = camera.getDirection(new BABYLON.Vector3(1, 0, 0));
@@ -193,55 +283,53 @@ function handleMovement() {
     const impulseStrength = 0.08;
     
     if (keysPressed['KeyW'] || keysPressed['ArrowUp']) {
-        player.physicsImpostor.applyImpulse(forward.scale(impulseStrength), player.getAbsolutePosition());
+        playerPhysicsBody.physicsImpostor.applyImpulse(forward.scale(impulseStrength), playerPhysicsBody.getAbsolutePosition());
     }
     if (keysPressed['KeyS'] || keysPressed['ArrowDown']) {
-        player.physicsImpostor.applyImpulse(forward.scale(-impulseStrength), player.getAbsolutePosition());
+        playerPhysicsBody.physicsImpostor.applyImpulse(forward.scale(-impulseStrength), playerPhysicsBody.getAbsolutePosition());
     }
     if (keysPressed['KeyA'] || keysPressed['ArrowLeft']) {
-        player.physicsImpostor.applyImpulse(right.scale(-impulseStrength), player.getAbsolutePosition());
+        playerPhysicsBody.physicsImpostor.applyImpulse(right.scale(-impulseStrength), playerPhysicsBody.getAbsolutePosition());
     }
     if (keysPressed['KeyD'] || keysPressed['ArrowRight']) {
-        player.physicsImpostor.applyImpulse(right.scale(impulseStrength), player.getAbsolutePosition());
+        playerPhysicsBody.physicsImpostor.applyImpulse(right.scale(impulseStrength), playerPhysicsBody.getAbsolutePosition());
     }
     
-    // Brake/crouch - only works when in contact with another object
-    if ((keysPressed['ShiftLeft'] || keysPressed['ShiftRight']) && playerInContact) {
-        player.physicsImpostor.setLinearVelocity(player.physicsImpostor.getLinearVelocity().scale(0.9));
-        player.physicsImpostor.setAngularVelocity(player.physicsImpostor.getAngularVelocity().scale(0.9));
+    // Brake/crouch - only works when grounded
+    if (keysPressed['ShiftLeft'] || keysPressed['ShiftRight']) {
+        var ray = new BABYLON.Ray(playerPhysicsBody.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+        var hit = scene.pickWithRay(ray, function (mesh) {
+            // Exclude player physics body and all player visual mesh parts (names start with "player")
+            return mesh !== playerPhysicsBody && 
+                   !mesh.name.startsWith("player") && 
+                   mesh.name !== "skybox" &&
+                   mesh.name !== "front";
+        });
+
+        if (hit && hit.hit) {
+            playerPhysicsBody.physicsImpostor.setLinearVelocity(playerPhysicsBody.physicsImpostor.getLinearVelocity().scale(0.9));
+            playerPhysicsBody.physicsImpostor.setAngularVelocity(playerPhysicsBody.physicsImpostor.getAngularVelocity().scale(0.9));
+        }
     }
 }
 
-let scene;
-
-// Initialize the game
-function initGame() {
-    // Create the scene first (without the player)
-    scene = createSceneWithoutPlayer();
-    
-    // Now create the player
-    createPlayer(scene);
-    
-    // Hide loading screen
-    loadingScreen.classList.add('hidden');
-    
-    // Start render loop
-    engine.runRenderLoop(function () {
-        scene.render();
-    });
-}
-
-// Start the game
-initGame();
+const scene = createScene();
 
 // Multiplayer Logic
 function addOtherPlayer(playerInfo) {
-    // Create visible sphere for other players
-    const mesh = createPlayerSphere(scene, "otherPlayer_" + playerInfo.playerId, new BABYLON.Color3(1, 0.3, 0.3));
-    mesh.position.set(playerInfo.x, playerInfo.y, playerInfo.z);
-    mesh.physicsImpostor = new BABYLON.PhysicsImpostor(mesh, BABYLON.PhysicsImpostor.SphereImpostor, {mass: 0, restitution: 0.3}, scene);
+    console.log('Adding other player:', playerInfo.playerId.substring(0, 8));
     
-    otherPlayers[playerInfo.playerId] = { mesh };
+    // Visual humanoid character (red)
+    const mesh = createCharacterMesh(scene, "otherPlayer_" + playerInfo.playerId, new BABYLON.Color3(1, 0.3, 0.3));
+    mesh.position.set(playerInfo.x, playerInfo.y - 0.5, playerInfo.z);
+    
+    // Physics collider (invisible, for collisions)
+    const collider = BABYLON.MeshBuilder.CreateSphere("otherCollider_" + playerInfo.playerId, {diameter: 1.5, segments: 8}, scene);
+    collider.position.set(playerInfo.x, playerInfo.y, playerInfo.z);
+    collider.visibility = 0;
+    collider.physicsImpostor = new BABYLON.PhysicsImpostor(collider, BABYLON.PhysicsImpostor.SphereImpostor, {mass: 0, restitution: 0.3}, scene);
+    
+    otherPlayers[playerInfo.playerId] = { mesh, collider };
 }
 
 socket.on('currentPlayers', (players) => {
@@ -261,11 +349,29 @@ socket.on('newPlayer', (playerInfo) => {
     addOtherPlayer(playerInfo);
 });
 
+let moveCount = 0;
 socket.on('playerMoved', (playerInfo) => {
+    moveCount++;
+    if (moveCount % 60 === 0) { // Log every 60 messages
+        console.log('Received', moveCount, 'movement updates');
+    }
+    
     if (otherPlayers[playerInfo.playerId]) {
-        otherPlayers[playerInfo.playerId].mesh.position.set(playerInfo.x, playerInfo.y, playerInfo.z);
-        if (otherPlayers[playerInfo.playerId].mesh.physicsImpostor) {
-            otherPlayers[playerInfo.playerId].mesh.physicsImpostor.setTransformationFromPhysicsBody();
+        // Skip invalid positions
+        if (playerInfo.y < 0.3) return;
+        
+        // Set position directly (offset y for character feet)
+        const p = otherPlayers[playerInfo.playerId];
+        p.mesh.position.x = playerInfo.x;
+        p.mesh.position.y = playerInfo.y - 0.5; // Offset for character feet
+        p.mesh.position.z = playerInfo.z;
+        p.mesh.rotation.y = playerInfo.rotation || 0;
+        
+        // Update collider too (no offset, physics position)
+        if (p.collider) {
+            p.collider.position.x = playerInfo.x;
+            p.collider.position.y = playerInfo.y;
+            p.collider.position.z = playerInfo.z;
         }
     }
 });
@@ -273,9 +379,13 @@ socket.on('playerMoved', (playerInfo) => {
 socket.on('disconnectPlayer', (playerId) => {
     if (otherPlayers[playerId]) {
         otherPlayers[playerId].mesh.dispose();
+        if (otherPlayers[playerId].collider) {
+            otherPlayers[playerId].collider.dispose();
+        }
         delete otherPlayers[playerId];
     }
 });
+
 
 socket.on('blockSpawned', (blockData) => {
     spawnBlock(blockData);
@@ -286,6 +396,26 @@ socket.on('clearBlocks', () => {
         mesh.dispose();
     });
     spawnedBlocks.length = 0;
+});
+
+// Receive balls shot by other players
+socket.on('ballShot', (ballData) => {
+    const ball = BABYLON.MeshBuilder.CreateSphere("ball", {diameter: 0.3, segments: 8}, scene);
+    const ballMat = new BABYLON.StandardMaterial("ballMat", scene);
+    ballMat.diffuseColor = new BABYLON.Color3(1, 0.5, 0); // Orange for other players
+    ballMat.emissiveColor = new BABYLON.Color3(0.3, 0.15, 0);
+    ball.material = ballMat;
+    ball.position.set(ballData.x, ballData.y, ballData.z);
+    ball.physicsImpostor = new BABYLON.PhysicsImpostor(ball, BABYLON.PhysicsImpostor.SphereImpostor, {mass: 0.5, restitution: 0.5}, scene);
+    
+    // Apply impulse in the direction it was shot
+    const dir = new BABYLON.Vector3(ballData.dirX, ballData.dirY, ballData.dirZ);
+    ball.physicsImpostor.applyImpulse(dir.scale(15), ball.getAbsolutePosition());
+    
+    // Remove ball after 5 seconds
+    setTimeout(() => {
+        ball.dispose();
+    }, 5000);
 });
 
 // Helper function to spawn block
@@ -335,27 +465,91 @@ frontfacingvis.onchange = function() {
     }
 }
 
-canvas.onclick = function() {
-    canvas.requestPointerLock = 
-        canvas.requestPointerLock ||
-        canvas.mozRequestPointerLock ||
-        canvas.webkitRequestPointerLock;
-    canvas.requestPointerLock();
-
-    const sizeval = size.value/50;
+// Building arm animation
+function playBuildAnimation() {
+    if (!player.leftArm || !player.rightArm) return;
     
-    const spawnPos = frontfacing.getAbsolutePosition();
-    const blockData = {
-        type: meshtype.value,
-        size: sizeval,
-        position: { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z },
-        color: document.getElementById("colorpicker").value,
-        slimy: slimyToggle.checked
-    };
-
-    spawnBlock(blockData);
-    socket.emit('spawnBlock', blockData);
+    const leftArm = player.leftArm;
+    const rightArm = player.rightArm;
+    const originalLeftX = leftArm.rotation.x;
+    const originalRightX = rightArm.rotation.x;
+    
+    // Animate arms forward
+    let frame = 0;
+    const animInterval = setInterval(() => {
+        frame++;
+        if (frame <= 5) {
+            // Arms swing forward
+            leftArm.rotation.x = originalLeftX - (frame * 0.15);
+            rightArm.rotation.x = originalRightX - (frame * 0.15);
+        } else if (frame <= 10) {
+            // Arms swing back
+            leftArm.rotation.x = originalLeftX - ((10 - frame) * 0.15);
+            rightArm.rotation.x = originalRightX - ((10 - frame) * 0.15);
+        } else {
+            // Reset
+            leftArm.rotation.x = originalLeftX;
+            rightArm.rotation.x = originalRightX;
+            clearInterval(animInterval);
+        }
+    }, 30);
 }
+
+// Prevent default context menu
+canvas.oncontextmenu = function(e) { e.preventDefault(); };
+
+// Use Babylon.js pointer observable for proper pointer lock support
+scene.onPointerObservable.add((pointerInfo) => {
+    if (pointerInfo.type === BABYLON.PointerEventTypes.POINTERDOWN) {
+        // Request pointer lock on any click
+        if (!document.pointerLockElement) {
+            canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
+            canvas.requestPointerLock();
+            return; // Don't shoot/build on the click that requests lock
+        }
+        
+        const button = pointerInfo.event.button;
+        
+        if (button === 0) {
+            // Left click - shoot ball
+            const shootDir = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
+            const startPos = playerPhysicsBody.position.add(shootDir.scale(1.5));
+            
+            const ball = BABYLON.MeshBuilder.CreateSphere("ball", {diameter: 0.3, segments: 8}, scene);
+            const ballMat = new BABYLON.StandardMaterial("ballMat", scene);
+            ballMat.diffuseColor = new BABYLON.Color3(1, 1, 0);
+            ballMat.emissiveColor = new BABYLON.Color3(0.3, 0.3, 0);
+            ball.material = ballMat;
+            ball.position = startPos.clone();
+            ball.physicsImpostor = new BABYLON.PhysicsImpostor(ball, BABYLON.PhysicsImpostor.SphereImpostor, {mass: 0.5, restitution: 0.5}, scene);
+            
+            ball.physicsImpostor.applyImpulse(shootDir.scale(15), ball.getAbsolutePosition());
+            
+            setTimeout(() => { ball.dispose(); }, 5000);
+            
+            socket.emit('shootBall', {
+                x: startPos.x, y: startPos.y, z: startPos.z,
+                dirX: shootDir.x, dirY: shootDir.y, dirZ: shootDir.z
+            });
+        } else if (button === 2) {
+            // Right click - spawn block
+            playBuildAnimation();
+            
+            const sizeval = size.value / 50;
+            const spawnPos = frontfacing.getAbsolutePosition();
+            const blockData = {
+                type: meshtype.value,
+                size: sizeval,
+                position: { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z },
+                color: document.getElementById("colorpicker").value,
+                slimy: slimyToggle.checked
+            };
+
+            spawnBlock(blockData);
+            socket.emit('spawnBlock', blockData);
+        }
+    }
+});
 
 clearBtn.onclick = function() {
     socket.emit('clearBlocks');
@@ -370,14 +564,25 @@ document.addEventListener('keydown', function(event) {
         isThirdPerson = !isThirdPerson;
     }
 
-    // Jump
+    // Jump - only works when grounded
     if (event.code === "Space") {
         if (!jumpreloading) {
-            jumpreloading = true;
-            player.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, 1, 0).scale(10), player.getAbsolutePosition());
-            setTimeout(function() {
-                jumpreloading = false;
-            }, 3000);
+            // Check if grounded before allowing jump
+            var ray = new BABYLON.Ray(playerPhysicsBody.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+            var hit = scene.pickWithRay(ray, function (mesh) {
+                return mesh !== playerPhysicsBody && 
+                       !mesh.name.startsWith("player") && 
+                       mesh.name !== "skybox" &&
+                       mesh.name !== "front";
+            });
+            
+            if (hit && hit.hit) {
+                jumpreloading = true;
+                playerPhysicsBody.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, 1, 0).scale(10), playerPhysicsBody.getAbsolutePosition());
+                setTimeout(function() {
+                    jumpreloading = false;
+                }, 500); // Reduced cooldown since we check grounded anyway
+            }
         }
     }
 });
@@ -397,6 +602,10 @@ menureveal.onclick = function() {
         menuselections.style.top = "0px";
     }
 }
+
+engine.runRenderLoop(function () {
+    scene.render();
+});
 
 window.addEventListener("resize", function () {
     engine.resize();

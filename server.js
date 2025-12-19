@@ -141,6 +141,10 @@ io.on('connection', (socket) => {
         broadcastToAdmins('adminData', getAdminData());
     });
 
+    socket.on('shootBall', (ballData) => {
+        socket.broadcast.emit('ballShot', ballData);
+    });
+
     socket.on('clearBlocks', () => {
         blocks.length = 0;
         io.emit('clearBlocks');
