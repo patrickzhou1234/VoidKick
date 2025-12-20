@@ -60,7 +60,7 @@ io.on('connection', (socket) => {
     console.log('a socket connected:', socket.id);
 
     // Player registers as a game client
-    socket.on('registerPlayer', () => {
+    socket.on('registerPlayer', (data) => {
         if (adminSockets.has(socket)) return; // Admins can't be players
         if (players[socket.id]) return; // Already registered
         
@@ -69,6 +69,7 @@ io.on('connection', (socket) => {
         // Create a new player object
         players[socket.id] = {
             id: socket.id,
+            username: (data && data.username) ? data.username : "Player",
             x: 0,
             y: 3,
             z: 0,
@@ -152,15 +153,36 @@ io.on('connection', (socket) => {
     });
 
     socket.on('shootBall', (ballData) => {
+        // Add shooter ID to ball data
+        ballData.shooterId = socket.id;
         socket.broadcast.emit('ballShot', ballData);
     });
 
     socket.on('shootUltimate', (ultimateData) => {
+        // Add shooter ID to ultimate data
+        ultimateData.shooterId = socket.id;
         socket.broadcast.emit('ultimateShot', ultimateData);
     });
 
-    socket.on('playerDied', () => {
-        socket.broadcast.emit('playerDied', socket.id);
+    socket.on('playerDied', (data) => {
+        const killerId = data ? data.killerId : null;
+        const cause = data ? data.cause : 'unknown';
+        const killerName = (killerId && players[killerId]) ? players[killerId].username : 'Unknown';
+        
+        socket.broadcast.emit('playerDied', { 
+            playerId: socket.id,
+            killerId: killerId,
+            killerName: killerName, // Send killer name to everyone
+            cause: cause
+        });
+        
+        if (killerId && players[killerId]) {
+            // Notify the killer
+            io.to(killerId).emit('killConfirmed', {
+                victimId: socket.id,
+                victimName: players[socket.id] ? players[socket.id].username : 'Player'
+            });
+        }
     });
 
     socket.on('playerRespawned', () => {

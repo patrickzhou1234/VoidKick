@@ -13,10 +13,40 @@ const socket = io();
 const otherPlayers = {};
 const spawnedBlocks = [];
 
+// Username state
+let myUsername = "Player";
+let hasJoined = false;
+
+const usernameInput = document.getElementById("usernameInput");
+const startGameBtn = document.getElementById("startGameBtn");
+const usernameOverlay = document.getElementById("usernameOverlay");
+
+startGameBtn.onclick = function() {
+    const name = usernameInput.value.trim();
+    if (name) {
+        myUsername = name;
+        usernameOverlay.style.display = "none";
+        hasJoined = true;
+        // Register player now that we have a name
+        socket.emit('registerPlayer', { username: myUsername });
+        
+        // Request pointer lock
+        canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
+        canvas.requestPointerLock();
+    }
+}
+
+// Allow enter key to start game
+usernameInput.addEventListener("keyup", function(event) {
+    if (event.key === "Enter") {
+        startGameBtn.click();
+    }
+});
+
 // Register as a player when connected
 socket.on('connect', () => {
     console.log('Socket connected:', socket.id);
-    socket.emit('registerPlayer');
+    // Don't register automatically anymore, wait for username
 });
 
 socket.on('disconnect', () => {
@@ -29,6 +59,10 @@ socket.on('connect_error', (error) => {
 
 // Third person toggle state
 let isThirdPerson = false;
+
+// Last hit tracking
+let lastHitterId = null;
+let lastHitterTime = 0;
 
 // Death/respawn state
 let isDead = false;
@@ -63,8 +97,27 @@ function setPlayerMeshVisibility(characterRoot, visible) {
 const keysPressed = {};
 
 // Create a humanoid character mesh
-function createCharacterMesh(scene, name, color) {
+function createCharacterMesh(scene, name, color, username) {
     const characterRoot = new BABYLON.TransformNode(name, scene);
+    
+    // Create Username Label
+    if (username) {
+        const dynamicTexture = new BABYLON.DynamicTexture("DynamicTexture", 512, scene, true);
+        dynamicTexture.hasAlpha = true;
+        dynamicTexture.drawText(username, null, null, "bold 60px Arial", "white", "transparent", true);
+        
+        const plane = BABYLON.Mesh.CreatePlane("namePlane", 2, scene);
+        plane.parent = characterRoot;
+        plane.position.y = 2.2;
+        plane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+        
+        const planeMat = new BABYLON.StandardMaterial("nameMat", scene);
+        planeMat.diffuseTexture = dynamicTexture;
+        planeMat.backFaceCulling = false;
+        planeMat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+        planeMat.disableLighting = true;
+        plane.material = planeMat;
+    }
     
     const mat = new BABYLON.StandardMaterial(name + "Mat", scene);
     mat.diffuseColor = color;
@@ -232,7 +285,7 @@ var createScene = function () {
     playerPhysicsBody.physicsImpostor = new BABYLON.PhysicsImpostor(playerPhysicsBody, BABYLON.PhysicsImpostor.SphereImpostor, {mass:1, restitution:0.3, friction: 0.5}, scene);
     
     // Player visual mesh (humanoid character)
-    player = createCharacterMesh(scene, "player", new BABYLON.Color3(0.2, 0.6, 1));
+    player = createCharacterMesh(scene, "player", new BABYLON.Color3(0.2, 0.6, 1), myUsername);
     player.position.y = 3;
 
     frontfacing = BABYLON.Mesh.CreateBox("front", 1, scene);
@@ -248,7 +301,16 @@ var createScene = function () {
     scene.registerBeforeRender(function() {
         // Check for death (fell below world)
         if (!isDead && playerPhysicsBody.position.y < DEATH_HEIGHT) {
-            window.triggerDeath();
+            // Determine if it was a suicide or kill based on last hit
+            let killerId = null;
+            let cause = "Fell to Death";
+            
+            if (Date.now() - lastHitterTime < 5000) { // If hit in last 5 seconds
+                killerId = lastHitterId;
+                cause = "Knocked into Void";
+            }
+            
+            window.triggerDeath(killerId, cause);
         }
         
         // Sync player visual mesh to physics body
@@ -360,7 +422,7 @@ var createScene = function () {
     });
     
     // Death and respawn functions (exposed to window for ultimate ball kills)
-    window.triggerDeath = function() {
+    window.triggerDeath = function(killerId, cause, killerName) {
         if (isDead) return; // Already dead
         isDead = true;
         
@@ -370,11 +432,35 @@ var createScene = function () {
         }
         
         // Notify other players that we died (hide our character on their screens)
-        socket.emit('playerDied');
+        socket.emit('playerDied', { killerId: killerId, cause: cause });
         
         const overlay = document.getElementById('deathOverlay');
         const timerText = document.getElementById('respawnTimer');
+        const causeText = document.getElementById('causeOfDeath');
+        const killerText = document.getElementById('killerInfo');
+        
         overlay.style.display = 'flex';
+        causeText.textContent = "Cause of Death: " + (cause || "Unknown");
+        
+        // Prefer explicit killer name if passed (e.g. from server/kill event later), 
+        // otherwise look up in otherPlayers
+        let nameToShow = killerName || "Player";
+        if (!killerName && killerId && otherPlayers[killerId]) {
+            nameToShow = otherPlayers[killerId].username;
+        } else if (!killerName && killerId === socket.id) {
+             nameToShow = "Yourself";
+        }
+
+        if (killerId) {
+             killerText.textContent = "Killed by: " + nameToShow;
+             
+             if (otherPlayers[killerId]) {
+                const killerPos = otherPlayers[killerId].mesh.position;
+                camera.setTarget(killerPos);
+             }
+        } else {
+            killerText.textContent = "";
+        }
         
         let countdown = 5;
         timerText.textContent = `Respawning in ${countdown}...`;
@@ -615,7 +701,7 @@ function addOtherPlayer(playerInfo) {
     console.log('Adding other player:', playerInfo.playerId.substring(0, 8));
     
     // Visual humanoid character (red)
-    const mesh = createCharacterMesh(scene, "otherPlayer_" + playerInfo.playerId, new BABYLON.Color3(1, 0.3, 0.3));
+    const mesh = createCharacterMesh(scene, "otherPlayer_" + playerInfo.playerId, new BABYLON.Color3(1, 0.3, 0.3), playerInfo.username || "Player");
     mesh.position.set(playerInfo.x, playerInfo.y - 0.5, playerInfo.z);
     
     // Physics collider (invisible, for collisions)
@@ -629,6 +715,7 @@ function addOtherPlayer(playerInfo) {
         collider, 
         chargingBall: null,  // For showing their charging ultimate
         lastAnimState: 'idle',
+        username: playerInfo.username || "Player", // Store username here for easy access
         // Position and velocity for smooth interpolation
         serverX: playerInfo.x,
         serverY: playerInfo.y - 0.5,
@@ -763,18 +850,49 @@ socket.on('disconnectPlayer', (playerId) => {
     }
 });
 
-// Hide player when they die
-socket.on('playerDied', (playerId) => {
-    if (otherPlayers[playerId]) {
-        setPlayerMeshVisibility(otherPlayers[playerId].mesh, false);
-        if (otherPlayers[playerId].collider) {
-            otherPlayers[playerId].collider.visibility = 0;
+// Kill notification state
+let killFeedTimeout;
+let killAnimTimeout;
+
+socket.on('killConfirmed', (data) => {
+    // Show kill animation
+    const killAnim = document.getElementById('killAnimation');
+    const killedName = document.getElementById('killedName');
+    killedName.textContent = data.victimName;
+    killAnim.style.display = 'block';
+    
+    // Play sound or particle effect could go here
+    
+    // Hide after 2 seconds
+    clearTimeout(killAnimTimeout);
+    killAnimTimeout = setTimeout(() => {
+        killAnim.style.display = 'none';
+    }, 2000);
+});
+
+// Update kill feed when someone dies
+socket.on('playerDied', (data) => {
+    if (otherPlayers[data.playerId]) {
+        setPlayerMeshVisibility(otherPlayers[data.playerId].mesh, false);
+        if (otherPlayers[data.playerId].collider) {
+            otherPlayers[data.playerId].collider.visibility = 0;
         }
-        if (otherPlayers[playerId].chargingBall) {
-            otherPlayers[playerId].chargingBall.dispose();
-            otherPlayers[playerId].chargingBall = null;
+        if (otherPlayers[data.playerId].chargingBall) {
+            otherPlayers[data.playerId].chargingBall.dispose();
+            otherPlayers[data.playerId].chargingBall = null;
         }
     }
+    
+    // Add to killfeed
+    const victimName = otherPlayers[data.playerId] ? 
+        (otherPlayers[data.playerId].username || "Player") : "Player";
+         
+    // We'd ideally need the names from the server for perfect accuracy in killfeed
+});
+
+// New death handler with info
+socket.on('youDied', (data) => {
+    // This is a custom event we should emit from server just for the victim
 });
 
 // Show player when they respawn
@@ -820,6 +938,10 @@ socket.on('ballShot', (ballData) => {
         
         playerPhysicsBody.physicsImpostor.applyImpulse(knockbackDir.scale(knockbackStrength), playerPhysicsBody.getAbsolutePosition());
         
+        // If we want to track who knocked us off, we should store the last hitter
+        lastHitterId = ballData.shooterId;
+        lastHitterTime = Date.now();
+        
         if (isChargingUltimate) {
             cancelUltimate();
             console.log('Ultimate cancelled - hit by ball!');
@@ -847,7 +969,7 @@ socket.on('ultimateShot', (ultimateData) => {
     // Ultimate ball is an INSTANT KILL - triggers death on collision with player
     ultimateBall.physicsImpostor.registerOnPhysicsCollide(playerPhysicsBody.physicsImpostor, () => {
         console.log('HIT BY ULTIMATE - INSTANT DEATH!');
-        window.triggerDeath();
+        window.triggerDeath(ultimateData.shooterId, "Obliterated by Ultimate");
         // Dispose the ultimate ball after killing
         ultimateBall.dispose();
     });
@@ -989,7 +1111,7 @@ scene.onPointerObservable.add((pointerInfo) => {
         
         if (button === 0) {
             // Left click - shoot ball
-            if (!canShoot) return; // Fire rate limit
+            if (!canShoot || isDead) return; // Fire rate limit and death check
             
             canShoot = false;
             setTimeout(() => { canShoot = true; }, SHOOT_COOLDOWN);
@@ -1020,7 +1142,7 @@ scene.onPointerObservable.add((pointerInfo) => {
             });
         } else if (button === 2) {
             // Right click - spawn block
-            if (!canBuild) return; // Build rate limit
+            if (!canBuild || isDead) return; // Build rate limit and death check
             
             canBuild = false;
             setTimeout(() => { canBuild = true; }, BUILD_COOLDOWN);
