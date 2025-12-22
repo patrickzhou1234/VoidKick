@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Player Profile - Block Battle Arena</title>
+    <link href="https://cdn.muicss.com/mui-0.10.3/css/mui.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header h1 {
+            color: #fff;
+            font-size: 28px;
+        }
+        
+        .header-links a {
+            color: #4a90d9;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+        
+        .header-links a:hover {
+            text-decoration: underline;
+        }
+        
+        .profile-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+        }
+        
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .avatar {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4a90d9, #7c3aed);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            font-weight: bold;
+            color: #fff;
+        }
+        
+        .profile-info h2 {
+            font-size: 32px;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+        
+        .profile-info p {
+            color: #888;
+            font-size: 14px;
+        }
+        
+        .profile-id {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 5px 12px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #aaa;
+            display: inline-block;
+            margin-top: 10px;
+        }
+        
+        .share-btn {
+            margin-left: auto;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #4a90d9, #7c3aed);
+            border: none;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .share-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(74, 144, 217, 0.4);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .stat-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 36px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #4a90d9, #7c3aed);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .stat-label {
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 5px;
+        }
+        
+        .section-title {
+            font-size: 20px;
+            color: #fff;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .weapon-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .weapon-card {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .weapon-icon {
+            font-size: 32px;
+        }
+        
+        .weapon-info h4 {
+            color: #fff;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .weapon-info p {
+            color: #4a90d9;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #4a90d9;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .not-found {
+            text-align: center;
+            padding: 60px;
+        }
+        
+        .not-found h2 {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        
+        .not-found p {
+            color: #888;
+            margin-bottom: 30px;
+        }
+        
+        .kdr-highlight {
+            font-size: 48px !important;
+        }
+        
+        .kdr-positive {
+            color: #4caf50 !important;
+            -webkit-text-fill-color: #4caf50 !important;
+        }
+        
+        .kdr-negative {
+            color: #e53935 !important;
+            -webkit-text-fill-color: #e53935 !important;
+        }
+        
+        .kdr-neutral {
+            color: #ff9800 !important;
+            -webkit-text-fill-color: #ff9800 !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎮 Block Battle Arena</h1>
+            <div class="header-links">
+                <a href="/">Play Game</a>
+                <a href="/leaderboard">Leaderboard</a>
+                <a href="/auth">Login</a>
+            </div>
+        </header>
+        
+        <div id="content">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Loading profile...</p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const profileId = window.location.pathname.split('/').pop();
+        
+        async function loadProfile() {
+            try {
+                const res = await fetch(`/api/profile/${profileId}`);
+                const data = await res.json();
+                
+                if (data.success) {
+                    renderProfile(data.profile);
+                } else {
+                    renderNotFound();
+                }
+            } catch (err) {
+                console.error('Error loading profile:', err);
+                renderNotFound();
+            }
+        }
+        
+        function renderProfile(profile) {
+            const stats = profile.stats;
+            const memberDate = new Date(profile.memberSince).toLocaleDateString('en-US', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            // Determine KDR class
+            let kdrClass = 'kdr-neutral';
+            if (stats.kdr >= 1.5) kdrClass = 'kdr-positive';
+            else if (stats.kdr < 1) kdrClass = 'kdr-negative';
+            
+            // Format time played
+            const hours = Math.floor(stats.timePlayed / 3600);
+            const minutes = Math.floor((stats.timePlayed % 3600) / 60);
+            const timeString = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+            
+            document.getElementById('content').innerHTML = `
+                <div class="profile-card">
+                    <div class="profile-header">
+                        <div class="avatar">${profile.username.substring(0, 2).toUpperCase()}</div>
+                        <div class="profile-info">
+                            <h2>${profile.username}</h2>
+                            <p>Member since ${memberDate}</p>
+                            <div class="profile-id">ID: ${profile.profileId}</div>
+                        </div>
+                        <button class="share-btn" onclick="shareProfile()">📤 Share Profile</button>
+                    </div>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value kdr-highlight ${kdrClass}">${stats.kdr.toFixed(2)}</div>
+                            <div class="stat-label">K/D Ratio</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.kills}</div>
+                            <div class="stat-label">Total Kills</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.deaths}</div>
+                            <div class="stat-label">Total Deaths</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.gamesPlayed}</div>
+                            <div class="stat-label">Games Played</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${timeString}</div>
+                            <div class="stat-label">Time Played</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">${stats.blocksPlaced}</div>
+                            <div class="stat-label">Blocks Placed</div>
+                        </div>
+                    </div>
+                    
+                    <h3 class="section-title">🔫 Weapon Stats</h3>
+                    <div class="weapon-stats">
+                        <div class="weapon-card">
+                            <div class="weapon-icon">⚪</div>
+                            <div class="weapon-info">
+                                <h4>Ball</h4>
+                                <p>${stats.weaponKills.ball} kills</p>
+                            </div>
+                        </div>
+                        <div class="weapon-card">
+                            <div class="weapon-icon">💥</div>
+                            <div class="weapon-info">
+                                <h4>Ultimate</h4>
+                                <p>${stats.weaponKills.ultimate} kills</p>
+                            </div>
+                        </div>
+                        <div class="weapon-card">
+                            <div class="weapon-icon">💣</div>
+                            <div class="weapon-info">
+                                <h4>Grenade</h4>
+                                <p>${stats.weaponKills.grenade} kills</p>
+                            </div>
+                        </div>
+                        <div class="weapon-card">
+                            <div class="weapon-icon">🏏</div>
+                            <div class="weapon-info">
+                                <h4>Bat</h4>
+                                <p>${stats.weaponKills.bat} kills</p>
+                            </div>
+                        </div>
+                        <div class="weapon-card">
+                            <div class="weapon-icon">🚁</div>
+                            <div class="weapon-info">
+                                <h4>Drone</h4>
+                                <p>${stats.weaponKills.drone} kills</p>
+                            </div>
+                        </div>
+                        <div class="weapon-card">
+                            <div class="weapon-icon">💀</div>
+                            <div class="weapon-info">
+                                <h4>Mine</h4>
+                                <p>${stats.weaponKills.mine} kills</p>
+                            </div>
+                        </div>
+                        <div class="weapon-card">
+                            <div class="weapon-icon">👊</div>
+                            <div class="weapon-info">
+                                <h4>Knockback</h4>
+                                <p>${stats.weaponKills.knockback} kills</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Update page title
+            document.title = `${profile.username}'s Profile - Block Battle Arena`;
+        }
+        
+        function renderNotFound() {
+            document.getElementById('content').innerHTML = `
+                <div class="profile-card not-found">
+                    <h2>😕</h2>
+                    <h3>Profile Not Found</h3>
+                    <p>The player you're looking for doesn't exist or has been removed.</p>
+                    <a href="/leaderboard" class="share-btn">View Leaderboard</a>
+                </div>
+            `;
+        }
+        
+        function shareProfile() {
+            const url = window.location.href;
+            
+            if (navigator.share) {
+                navigator.share({
+                    title: document.title,
+                    url: url
+                });
+            } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(url).then(() => {
+                    alert('Profile link copied to clipboard!');
+                });
+            } else {
+                prompt('Copy this link:', url);
+            }
+        }
+        
+        loadProfile();
+    </script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Leaderboard - Block Battle Arena</title>
+    <link href="https://cdn.muicss.com/mui-0.10.3/css/mui.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #e0e0e0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .header h1 {
+            color: #fff;
+            font-size: 28px;
+        }
+        
+        .header-links a {
+            color: #4a90d9;
+            text-decoration: none;
+            margin-left: 20px;
+        }
+        
+        .header-links a:hover {
+            text-decoration: underline;
+        }
+        
+        .leaderboard-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        .leaderboard-header {
+            background: linear-gradient(135deg, #4a90d9, #7c3aed);
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .leaderboard-header h2 {
+            font-size: 28px;
+            color: #fff;
+            margin-bottom: 10px;
+        }
+        
+        .leaderboard-header p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+        }
+        
+        .leaderboard-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .leaderboard-table th {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px 20px;
+            text-align: left;
+            font-weight: 500;
+            color: #888;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .leaderboard-table td {
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        .leaderboard-table tr:hover {
+            background: rgba(255, 255, 255, 0.02);
+        }
+        
+        .rank {
+            font-weight: bold;
+            font-size: 18px;
+            width: 60px;
+        }
+        
+        .rank-1 { color: #ffd700; }
+        .rank-2 { color: #c0c0c0; }
+        .rank-3 { color: #cd7f32; }
+        
+        .player-cell {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .player-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4a90d9, #7c3aed);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .player-name {
+            color: #fff;
+            font-weight: 500;
+        }
+        
+        .player-name a {
+            color: #fff;
+            text-decoration: none;
+        }
+        
+        .player-name a:hover {
+            color: #4a90d9;
+        }
+        
+        .stat-cell {
+            font-weight: 500;
+        }
+        
+        .kdr-positive { color: #4caf50; }
+        .kdr-negative { color: #e53935; }
+        .kdr-neutral { color: #ff9800; }
+        
+        .loading {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #4a90d9;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px;
+            color: #888;
+        }
+        
+        .empty-state h3 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        
+        .top-3 {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            padding: 30px;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        
+        .top-player {
+            text-align: center;
+            padding: 20px;
+            border-radius: 15px;
+            background: rgba(255, 255, 255, 0.05);
+            min-width: 150px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .top-player:hover {
+            transform: translateY(-5px);
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .top-player.first {
+            order: 0;
+            transform: scale(1.1);
+        }
+        
+        .top-player.first:hover {
+            transform: scale(1.1) translateY(-5px);
+        }
+        
+        .top-player .medal {
+            font-size: 40px;
+            margin-bottom: 10px;
+        }
+        
+        .top-player .avatar {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #4a90d9, #7c3aed);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 20px;
+            margin: 0 auto 10px;
+        }
+        
+        .top-player.first .avatar {
+            width: 80px;
+            height: 80px;
+            font-size: 28px;
+        }
+        
+        .top-player .name {
+            color: #fff;
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .top-player .kills {
+            color: #4a90d9;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .top-player .kills-label {
+            color: #888;
+            font-size: 12px;
+        }
+        
+        @media (max-width: 600px) {
+            .top-3 {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .top-player.first {
+                order: -1;
+            }
+            
+            .leaderboard-table th:nth-child(4),
+            .leaderboard-table td:nth-child(4),
+            .leaderboard-table th:nth-child(5),
+            .leaderboard-table td:nth-child(5) {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎮 Block Battle Arena</h1>
+            <div class="header-links">
+                <a href="/">Play Game</a>
+                <a href="/auth">Login</a>
+            </div>
+        </header>
+        
+        <div class="leaderboard-card">
+            <div class="leaderboard-header">
+                <h2>🏆 Global Leaderboard</h2>
+                <p>Top players ranked by total kills</p>
+            </div>
+            
+            <div id="top3"></div>
+            
+            <div id="leaderboard">
+                <div class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Loading leaderboard...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        async function loadLeaderboard() {
+            try {
+                const res = await fetch('/api/leaderboard?limit=100');
+                const data = await res.json();
+                
+                if (data.success && data.leaderboard.length > 0) {
+                    renderLeaderboard(data.leaderboard);
+                } else {
+                    renderEmpty();
+                }
+            } catch (err) {
+                console.error('Error loading leaderboard:', err);
+                renderEmpty();
+            }
+        }
+        
+        function renderLeaderboard(players) {
+            // Render top 3
+            if (players.length >= 3) {
+                const top3 = players.slice(0, 3);
+                document.getElementById('top3').innerHTML = `
+                    <div class="top-3">
+                        <div class="top-player" onclick="viewProfile('${top3[1].profileId}')">
+                            <div class="medal">🥈</div>
+                            <div class="avatar">${top3[1].username.substring(0, 2).toUpperCase()}</div>
+                            <div class="name">${top3[1].username}</div>
+                            <div class="kills">${top3[1].kills}</div>
+                            <div class="kills-label">kills</div>
+                        </div>
+                        <div class="top-player first" onclick="viewProfile('${top3[0].profileId}')">
+                            <div class="medal">🥇</div>
+                            <div class="avatar">${top3[0].username.substring(0, 2).toUpperCase()}</div>
+                            <div class="name">${top3[0].username}</div>
+                            <div class="kills">${top3[0].kills}</div>
+                            <div class="kills-label">kills</div>
+                        </div>
+                        <div class="top-player" onclick="viewProfile('${top3[2].profileId}')">
+                            <div class="medal">🥉</div>
+                            <div class="avatar">${top3[2].username.substring(0, 2).toUpperCase()}</div>
+                            <div class="name">${top3[2].username}</div>
+                            <div class="kills">${top3[2].kills}</div>
+                            <div class="kills-label">kills</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Render table
+            const rows = players.map(player => {
+                let rankClass = '';
+                if (player.rank === 1) rankClass = 'rank-1';
+                else if (player.rank === 2) rankClass = 'rank-2';
+                else if (player.rank === 3) rankClass = 'rank-3';
+                
+                let kdrClass = 'kdr-neutral';
+                if (player.kdr >= 1.5) kdrClass = 'kdr-positive';
+                else if (player.kdr < 1) kdrClass = 'kdr-negative';
+                
+                return `
+                    <tr onclick="viewProfile('${player.profileId}')" style="cursor:pointer;">
+                        <td class="rank ${rankClass}">#${player.rank}</td>
+                        <td>
+                            <div class="player-cell">
+                                <div class="player-avatar">${player.username.substring(0, 2).toUpperCase()}</div>
+                                <div class="player-name">${player.username}</div>
+                            </div>
+                        </td>
+                        <td class="stat-cell">${player.kills}</td>
+                        <td class="stat-cell">${player.deaths}</td>
+                        <td class="stat-cell ${kdrClass}">${player.kdr}</td>
+                        <td class="stat-cell">${player.gamesPlayed}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            document.getElementById('leaderboard').innerHTML = `
+                <table class="leaderboard-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Player</th>
+                            <th>Kills</th>
+                            <th>Deaths</th>
+                            <th>K/D</th>
+                            <th>Games</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows}
+                    </tbody>
+                </table>
+            `;
+        }
+        
+        function renderEmpty() {
+            document.getElementById('top3').innerHTML = '';
+            document.getElementById('leaderboard').innerHTML = `
+                <div class="empty-state">
+                    <h3>No players yet!</h3>
+                    <p>Be the first to join and claim the top spot.</p>
+                    <a href="/" class="mui-btn mui-btn--primary mui-btn--raised" style="margin-top:20px;">Start Playing</a>
+                </div>
+            `;
+        }
+        
+        function viewProfile(profileId) {
+            window.location.href = `/profile/${profileId}`;
+        }
+        
+        loadLeaderboard();
+    </script>
+</body>
+</html>

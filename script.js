@@ -17,9 +17,89 @@ let blockIdCounter = 0; // Local counter for generating block IDs
 
 // Username state
 let myUsername = "Player";
+let myProfileId = null;
+let currentUser = null;
 let hasJoined = false;
 let selectedRoomId = 'default'; // Default room selection
 let availableRooms = [];
+
+// Check authentication on page load
+async function checkAuth() {
+    try {
+        const response = await fetch('/api/auth/me');
+        const data = await response.json();
+        
+        if (response.ok && data.success && data.user) {
+            currentUser = data.user;
+            myUsername = currentUser.username;
+            myProfileId = currentUser.profile_id;
+            // Update UI to show logged-in user
+            const usernameInput = document.getElementById("usernameInput");
+            const welcomeMessage = document.getElementById("welcomeMessage");
+            const viewProfileBtn = document.getElementById("viewProfileBtn");
+            
+            if (usernameInput) {
+                usernameInput.value = myUsername;
+                usernameInput.disabled = true;
+            }
+            if (welcomeMessage) {
+                welcomeMessage.textContent = `Welcome back, ${myUsername}!`;
+            }
+            if (viewProfileBtn && myProfileId) {
+                viewProfileBtn.style.display = 'inline-block';
+                viewProfileBtn.onclick = () => window.open('/profile/' + myProfileId, '_blank');
+            }
+            // Update profile button if exists
+            updateProfileButton();
+        } else {
+            // Not logged in - redirect to auth page
+            window.location.href = '/auth';
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+        window.location.href = '/auth';
+    }
+}
+
+function updateProfileButton() {
+    const settingsMenu = document.getElementById("settingsMenu");
+    if (settingsMenu && myProfileId) {
+        // Check if profile button already exists
+        if (!document.getElementById("profileBtn")) {
+            const profileBtn = document.createElement("button");
+            profileBtn.id = "profileBtn";
+            profileBtn.className = "mui-btn mui-btn--primary mui-btn--raised";
+            profileBtn.innerHTML = "👤 My Profile";
+            profileBtn.onclick = () => window.open('/profile/' + myProfileId, '_blank');
+            profileBtn.style.cssText = "width:100%; margin-bottom:10px;";
+            settingsMenu.insertBefore(profileBtn, settingsMenu.firstChild);
+            
+            // Add leaderboard button
+            const leaderboardBtn = document.createElement("button");
+            leaderboardBtn.id = "leaderboardBtn";
+            leaderboardBtn.className = "mui-btn mui-btn--accent mui-btn--raised";
+            leaderboardBtn.innerHTML = "🏆 Leaderboard";
+            leaderboardBtn.onclick = () => window.open('/leaderboard', '_blank');
+            leaderboardBtn.style.cssText = "width:100%; margin-bottom:10px;";
+            settingsMenu.insertBefore(leaderboardBtn, profileBtn.nextSibling);
+            
+            // Add logout button
+            const logoutBtn = document.createElement("button");
+            logoutBtn.id = "logoutBtn";
+            logoutBtn.className = "mui-btn mui-btn--danger mui-btn--raised";
+            logoutBtn.innerHTML = "🚪 Logout";
+            logoutBtn.onclick = async () => {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                window.location.href = '/auth';
+            };
+            logoutBtn.style.cssText = "width:100%; margin-top:10px;";
+            settingsMenu.appendChild(logoutBtn);
+        }
+    }
+}
+
+// Check auth immediately
+checkAuth();
 
 const usernameInput = document.getElementById("usernameInput");
 const startGameBtn = document.getElementById("startGameBtn");
@@ -105,8 +185,8 @@ joinPrivateRoomSubmit.onclick = function() {
         return;
     }
     
-    // Request to join private room with code
-    socket.emit('joinPrivateRoom', { code: code, username: myUsername });
+    // Request to join private room with code (username comes from session)
+    socket.emit('joinPrivateRoom', { code: code });
 };
 
 // Allow enter key to submit private room code
@@ -267,8 +347,8 @@ window.selectRoom = function(roomId) {
         hasJoined = true;
     }
     
-    // Register player with selected room
-    socket.emit('registerPlayer', { username: myUsername, roomId: selectedRoomId });
+    // Register player with selected room (username comes from session)
+    socket.emit('registerPlayer', { roomId: selectedRoomId });
     
     // Request pointer lock
     canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
@@ -276,17 +356,25 @@ window.selectRoom = function(roomId) {
 };
 
 startGameBtn.onclick = function() {
-    const name = usernameInput.value.trim();
-    if (name) {
-        myUsername = name;
+    // Username comes from session, no need to enter it
+    if (currentUser && myUsername) {
         usernameOverlay.style.display = "none";
         hasJoined = true;
         // Register player with default room
-        socket.emit('registerPlayer', { username: myUsername, roomId: selectedRoomId });
+        socket.emit('registerPlayer', { roomId: selectedRoomId });
         
         // Request pointer lock
         canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock || canvas.webkitRequestPointerLock;
         canvas.requestPointerLock();
+    } else {
+        Swal.fire({
+            icon: 'error',
+            title: 'Not Logged In',
+            text: 'Please log in to play!',
+            confirmButtonColor: '#4a90d9'
+        }).then(() => {
+            window.location.href = '/auth';
+        });
     }
 }
 
@@ -301,6 +389,26 @@ usernameInput.addEventListener("keyup", function(event) {
 socket.on('connect', () => {
     console.log('Socket connected:', socket.id);
     // Don't register automatically anymore, wait for username and room selection
+});
+
+// Handle auth required - server requests authentication
+socket.on('authRequired', () => {
+    console.log('Auth required - redirecting to login');
+    window.location.href = '/auth';
+});
+
+// Handle banned user
+socket.on('banned', (data) => {
+    Swal.fire({
+        icon: 'error',
+        title: 'Account Banned',
+        text: data.reason || 'Your account has been banned.',
+        confirmButtonColor: '#e53935',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then(() => {
+        window.location.href = '/auth';
+    });
 });
 
 socket.on('joinRoomError', (data) => {

@@ -5,24 +5,347 @@ const server = http.createServer(app);
 const { Server } = require("socket.io");
 const io = new Server(server);
 const path = require('path');
+const session = require('express-session');
+const db = require('./database');
 
-app.use(express.static(__dirname));
+// Session configuration
+const sessionMiddleware = session({
+    secret: 'block-battle-arena-secret-key-change-in-production',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+        secure: false, // Set to true in production with HTTPS
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    }
+});
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(sessionMiddleware);
+
+// Share session with Socket.IO
+io.use((socket, next) => {
+    sessionMiddleware(socket.request, {}, next);
+});
+
+// Static files (but protect admin)
+app.use((req, res, next) => {
+    // Block direct access to admin.html without authentication
+    if (req.path === '/admin.html') {
+        return res.redirect('/admin/login');
+    }
+    next();
+});
+
+app.use(express.static(__dirname, {
+    index: false
+}));
+
+// ============ AUTH ROUTES ============
 
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
+
+app.get('/auth', (req, res) => {
+    res.sendFile(path.join(__dirname, 'auth.html'));
+});
+
+app.get('/profile/:profileId', (req, res) => {
+    res.sendFile(path.join(__dirname, 'profile.html'));
+});
+
+app.get('/leaderboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'leaderboard.html'));
+});
+
+// API: Register
+app.post('/api/auth/register', async (req, res) => {
+    const { username, email, password } = req.body;
+    
+    if (!username || !email || !password) {
+        return res.status(400).json({ success: false, error: 'All fields are required' });
+    }
+    
+    if (username.length < 3 || username.length > 15) {
+        return res.status(400).json({ success: false, error: 'Username must be 3-15 characters' });
+    }
+    
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+        return res.status(400).json({ success: false, error: 'Username can only contain letters, numbers, and underscores' });
+    }
+    
+    if (password.length < 6) {
+        return res.status(400).json({ success: false, error: 'Password must be at least 6 characters' });
+    }
+    
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ success: false, error: 'Invalid email format' });
+    }
+    
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const result = await db.createUser(username, email, password);
+    
+    if (result.success) {
+        const loginResult = await db.loginUser(username, password, ip, req.headers['user-agent']);
+        if (loginResult.success) {
+            req.session.user = loginResult.user;
+            return res.json({ success: true, user: loginResult.user });
+        }
+    }
+    
+    res.status(400).json(result);
+});
+
+// API: Login
+app.post('/api/auth/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ success: false, error: 'Username and password required' });
+    }
+    
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const result = await db.loginUser(username, password, ip, req.headers['user-agent']);
+    
+    if (result.success) {
+        req.session.user = result.user;
+        res.json({ success: true, user: result.user });
+    } else {
+        res.status(401).json(result);
+    }
+});
+
+// API: Logout
+app.post('/api/auth/logout', (req, res) => {
+    req.session.destroy();
+    res.json({ success: true });
+});
+
+// API: Get current user
+app.get('/api/auth/me', (req, res) => {
+    if (req.session.user) {
+        res.json({ success: true, user: req.session.user });
+    } else {
+        res.json({ success: false, user: null });
+    }
+});
+
+// API: Get public profile
+app.get('/api/profile/:profileId', (req, res) => {
+    const profile = db.getPublicProfile(req.params.profileId);
+    
+    if (profile) {
+        const kdr = profile.deaths > 0 
+            ? (profile.kills / profile.deaths).toFixed(2) 
+            : profile.kills.toFixed(2);
+        
+        res.json({
+            success: true,
+            profile: {
+                username: profile.username,
+                profileId: profile.profile_id,
+                memberSince: profile.member_since,
+                stats: {
+                    kills: profile.kills,
+                    deaths: profile.deaths,
+                    kdr: parseFloat(kdr),
+                    gamesPlayed: profile.games_played,
+                    timePlayed: profile.time_played,
+                    blocksPlaced: profile.blocks_placed,
+                    weaponKills: {
+                        ball: profile.ball_kills,
+                        ultimate: profile.ultimate_kills,
+                        grenade: profile.grenade_kills,
+                        bat: profile.bat_kills,
+                        drone: profile.drone_kills,
+                        mine: profile.mine_kills,
+                        knockback: profile.knockback_kills
+                    }
+                }
+            }
+        });
+    } else {
+        res.status(404).json({ success: false, error: 'Profile not found' });
+    }
+});
+
+// API: Get leaderboard
+app.get('/api/leaderboard', (req, res) => {
+    const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+    const leaderboard = db.getLeaderboard(limit);
+    
+    res.json({
+        success: true,
+        leaderboard: leaderboard.map((entry, index) => ({
+            rank: index + 1,
+            username: entry.username,
+            profileId: entry.profile_id,
+            kills: entry.kills,
+            deaths: entry.deaths,
+            kdr: entry.kdr,
+            gamesPlayed: entry.games_played
+        }))
+    });
+});
+
+// ============ ADMIN ROUTES ============
 
 app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin.html'));
+    res.redirect('/admin/login');
 });
 
-// Server state
+app.get('/admin/login', (req, res) => {
+    if (req.session.adminToken) {
+        const adminSession = db.validateAdminSession(req.session.adminToken);
+        if (adminSession && adminSession.is_admin) {
+            return res.redirect('/admin/dashboard');
+        }
+    }
+    res.sendFile(path.join(__dirname, 'admin-login.html'));
+});
+
+app.post('/api/admin/login', async (req, res) => {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+        return res.status(400).json({ success: false, error: 'Credentials required' });
+    }
+    
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    const result = await db.loginUser(username, password, ip, req.headers['user-agent']);
+    
+    if (result.success && result.user.isAdmin) {
+        const token = db.createAdminSession(result.user.id, ip);
+        req.session.adminToken = token;
+        req.session.adminUser = result.user;
+        res.json({ success: true, user: result.user });
+    } else if (result.success && !result.user.isAdmin) {
+        res.status(403).json({ success: false, error: 'Not authorized as admin' });
+    } else {
+        res.status(401).json(result);
+    }
+});
+
+app.post('/api/admin/logout', (req, res) => {
+    if (req.session.adminToken) {
+        db.deleteAdminSession(req.session.adminToken);
+    }
+    req.session.adminToken = null;
+    req.session.adminUser = null;
+    res.json({ success: true });
+});
+
+function requireAdmin(req, res, next) {
+    if (!req.session.adminToken) {
+        return res.status(401).json({ success: false, error: 'Not authenticated' });
+    }
+    
+    const adminSession = db.validateAdminSession(req.session.adminToken);
+    if (!adminSession || !adminSession.is_admin) {
+        req.session.adminToken = null;
+        return res.status(401).json({ success: false, error: 'Session expired or invalid' });
+    }
+    
+    req.adminUser = adminSession;
+    next();
+}
+
+app.get('/admin/dashboard', (req, res) => {
+    if (!req.session.adminToken) {
+        return res.redirect('/admin/login');
+    }
+    
+    const adminSession = db.validateAdminSession(req.session.adminToken);
+    if (!adminSession || !adminSession.is_admin) {
+        return res.redirect('/admin/login');
+    }
+    
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// API: Get all users (admin)
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+    const users = db.getAllUsers();
+    const usersWithIPs = users.map(user => ({
+        ...user,
+        ips: db.getUserIPs(user.id),
+        stats: db.getStats(user.id)
+    }));
+    res.json({ success: true, users: usersWithIPs });
+});
+
+// API: Get user details (admin)
+app.get('/api/admin/users/:userId', requireAdmin, (req, res) => {
+    const user = db.getUserById(parseInt(req.params.userId));
+    if (!user) {
+        return res.status(404).json({ success: false, error: 'User not found' });
+    }
+    
+    res.json({
+        success: true,
+        user: {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            profileId: user.profile_id,
+            createdAt: user.created_at,
+            lastLogin: user.last_login,
+            isAdmin: user.is_admin === 1,
+            isBanned: user.is_banned === 1,
+            banReason: user.ban_reason
+        },
+        ips: db.getUserIPs(user.id),
+        loginHistory: db.getLoginHistory(user.id),
+        stats: db.getStats(user.id)
+    });
+});
+
+// API: Get users by IP (admin)
+app.get('/api/admin/ip/:ip', requireAdmin, (req, res) => {
+    const users = db.getUsersByIP(req.params.ip);
+    res.json({ success: true, users });
+});
+
+// API: Ban user (admin)
+app.post('/api/admin/users/:userId/ban', requireAdmin, (req, res) => {
+    const { reason } = req.body;
+    db.banUser(parseInt(req.params.userId), reason || 'No reason provided');
+    
+    // Kick player if online
+    for (const [socketId, player] of Object.entries(players)) {
+        if (player.odPlayerId === parseInt(req.params.userId)) {
+            const socket = io.sockets.sockets.get(socketId);
+            if (socket) {
+                socket.emit('banned', { reason: reason || 'No reason provided' });
+                socket.disconnect(true);
+            }
+        }
+    }
+    
+    res.json({ success: true });
+});
+
+// API: Unban user (admin)
+app.post('/api/admin/users/:userId/unban', requireAdmin, (req, res) => {
+    db.unbanUser(parseInt(req.params.userId));
+    res.json({ success: true });
+});
+
+// API: Set admin status (admin)
+app.post('/api/admin/users/:userId/admin', requireAdmin, (req, res) => {
+    const { isAdmin } = req.body;
+    db.setUserAdmin(parseInt(req.params.userId), isAdmin);
+    res.json({ success: true });
+});
+
+// ============ SERVER STATE ============
+
 const serverStartTime = Date.now();
 const players = {};
 const blocks = [];
 const rooms = [];
 const adminSockets = new Set();
-const ADMIN_PASSWORD = "placeholder"; // Admin panel password
 
 // Create default room
 rooms.push({
@@ -55,18 +378,22 @@ function getAdminData() {
             name: room.name,
             maxPlayers: room.maxPlayers,
             type: room.type,
-            code: room.code, // Include room code for admin
+            code: room.code,
             playerCount: Object.keys(room.players).length,
             blockCount: room.blocks.length,
             players: Object.values(room.players).map(p => ({
                 id: p.id,
+                odPlayerId: p.odPlayerId,
                 username: p.username,
+                profileId: p.profileId,
                 ip: p.ip
             }))
         })),
         players: Object.values(players).map(p => ({
             id: p.id,
+            odPlayerId: p.odPlayerId,
             username: p.username,
+            profileId: p.profileId,
             ip: p.ip,
             roomId: p.roomId,
             roomName: rooms.find(r => r.id === p.roomId)?.name || 'Unknown'
@@ -84,12 +411,25 @@ function broadcastToAdmins(event, data) {
 io.on('connection', (socket) => {
     console.log('a socket connected:', socket.id);
     
-    // Get client IP address
     const clientIp = socket.handshake.headers['x-forwarded-for'] || socket.handshake.address;
+    const session = socket.request.session;
 
     // Player registers as a game client
     socket.on('registerPlayer', (data) => {
-        if (adminSockets.has(socket)) return; // Admins can't be players
+        if (adminSockets.has(socket)) return;
+        
+        // Check if user is authenticated
+        if (!session || !session.user) {
+            socket.emit('authRequired');
+            return;
+        }
+        
+        // Check if user is banned
+        const user = db.getUserById(session.user.id);
+        if (user && user.is_banned) {
+            socket.emit('banned', { reason: user.ban_reason || 'No reason provided' });
+            return;
+        }
         
         const roomId = data.roomId || 'default';
         const room = rooms.find(r => r.id === roomId);
@@ -115,19 +455,28 @@ io.on('connection', (socket) => {
             }
         }
         
-        console.log('Player registered:', socket.id, 'Username:', data.username, 'Room:', room.name);
+        console.log('Player registered:', socket.id, 'Username:', session.user.username, 'Room:', room.name);
+        
+        // Track IP
+        db.trackUserIP(session.user.id, clientIp);
+        
+        // Increment games played
+        db.statements.incrementGamesPlayed.run(session.user.id);
         
         // Create or update player object
         players[socket.id] = {
             id: socket.id,
-            username: (data && data.username) ? data.username : "Player",
+            odPlayerId: session.user.id,
+            username: session.user.username,
+            profileId: session.user.profileId,
             ip: clientIp,
             x: 0,
             y: 3,
             z: 0,
             rotation: 0,
             playerId: socket.id,
-            roomId: roomId
+            roomId: roomId,
+            joinTime: Date.now()
         };
 
         // Add to room
@@ -137,7 +486,10 @@ io.on('connection', (socket) => {
         const roomPlayers = {};
         Object.keys(room.players).forEach(id => {
             if (players[id]) {
-                roomPlayers[id] = players[id];
+                roomPlayers[id] = {
+                    ...players[id],
+                    profileId: players[id].profileId
+                };
             }
         });
         socket.emit('currentPlayers', roomPlayers);
@@ -155,14 +507,17 @@ io.on('connection', (socket) => {
         })));
 
         // Broadcast the new player to other clients IN THE SAME ROOM
-        socket.to(roomId).emit('newPlayer', players[socket.id]);
+        socket.to(roomId).emit('newPlayer', {
+            ...players[socket.id],
+            profileId: players[socket.id].profileId
+        });
         
         // Join the room for socket.io broadcasts
         socket.join(roomId);
 
         // Notify admins
         broadcastToAdmins('adminData', getAdminData());
-        broadcastToAdmins('adminLog', { type: 'join', message: `${data.username} (${socket.id.substring(0, 8)}) joined ${room.name}` });
+        broadcastToAdmins('adminLog', { type: 'join', message: `${session.user.username} (${socket.id.substring(0, 8)}) joined ${room.name}` });
     });
 
     socket.on('disconnect', () => {
@@ -170,10 +525,16 @@ io.on('connection', (socket) => {
         
         // Check if it was a player
         if (players[socket.id]) {
-            const playerName = players[socket.id].username;
-            const roomId = players[socket.id].roomId;
+            const player = players[socket.id];
+            const roomId = player.roomId;
             const room = rooms.find(r => r.id === roomId);
             const roomName = room ? room.name : 'Unknown';
+            
+            // Track time played
+            if (player.joinTime && player.odPlayerId) {
+                const timePlayed = Math.floor((Date.now() - player.joinTime) / 1000);
+                db.statements.addTimePlayed.run(timePlayed, player.odPlayerId);
+            }
             
             // Remove from room
             rooms.forEach(room => {
@@ -187,7 +548,7 @@ io.on('connection', (socket) => {
             
             // Notify admins
             broadcastToAdmins('adminData', getAdminData());
-            broadcastToAdmins('adminLog', { type: 'leave', message: `${playerName} (${socket.id.substring(0, 8)}) left ${roomName}` });
+            broadcastToAdmins('adminLog', { type: 'leave', message: `${player.username} (${socket.id.substring(0, 8)}) left ${roomName}` });
         }
         
         // Remove from admin sockets if it was an admin
@@ -244,6 +605,12 @@ io.on('connection', (socket) => {
                 room.blocks.push(blockData);
                 // Only broadcast to players in the same room
                 socket.to(roomId).emit('blockSpawned', blockData);
+                
+                // Track blocks placed
+                if (players[socket.id].odPlayerId) {
+                    db.incrementBlocksPlaced(players[socket.id].odPlayerId);
+                }
+                
                 broadcastToAdmins('adminData', getAdminData());
             }
         }
@@ -372,10 +739,19 @@ io.on('connection', (socket) => {
     socket.on('playerDied', (data) => {
         const killerId = data ? data.killerId : null;
         const cause = data ? data.cause : 'unknown';
-        const killerName = (killerId && players[killerId]) ? players[killerId].username : 'Unknown';
         
         if (players[socket.id]) {
-            const roomId = players[socket.id].roomId;
+            const victim = players[socket.id];
+            const killer = killerId ? players[killerId] : null;
+            const killerName = killer ? killer.username : 'Unknown';
+            const roomId = victim.roomId;
+            
+            // Record kill in database
+            if (victim.odPlayerId) {
+                const killerDbId = killer ? killer.odPlayerId : null;
+                db.recordKill(killerDbId, victim.odPlayerId, cause, roomId);
+            }
+            
             // Only broadcast to players in the same room
             socket.to(roomId).emit('playerDied', { 
                 playerId: socket.id,
@@ -388,7 +764,7 @@ io.on('connection', (socket) => {
                 // Notify the killer
                 io.to(killerId).emit('killConfirmed', {
                     victimId: socket.id,
-                    victimName: players[socket.id] ? players[socket.id].username : 'Player'
+                    victimName: victim.username
                 });
             }
         }
@@ -442,6 +818,11 @@ io.on('connection', (socket) => {
     
     // Join private room with code
     socket.on('joinPrivateRoom', (data) => {
+        if (!session || !session.user) {
+            socket.emit('authRequired');
+            return;
+        }
+        
         const code = data.code.toUpperCase();
         const room = rooms.find(r => r.type === 'private' && r.code === code);
         
@@ -469,14 +850,17 @@ io.on('connection', (socket) => {
         // Join the private room
         players[socket.id] = {
             id: socket.id,
-            username: data.username,
+            odPlayerId: session.user.id,
+            username: session.user.username,
+            profileId: session.user.profileId,
             ip: clientIp,
             x: 0,
             y: 3,
             z: 0,
             rotation: 0,
             playerId: socket.id,
-            roomId: room.id
+            roomId: room.id,
+            joinTime: Date.now()
         };
         
         room.players[socket.id] = players[socket.id];
@@ -497,14 +881,19 @@ io.on('connection', (socket) => {
         socket.emit('privateRoomJoined', { roomId: room.id, roomName: room.name });
         
         broadcastToAdmins('adminData', getAdminData());
-        broadcastToAdmins('adminLog', { type: 'join', message: `${data.username} (${socket.id.substring(0, 8)}) joined private room ${room.name}` });
+        broadcastToAdmins('adminLog', { type: 'join', message: `${session.user.username} (${socket.id.substring(0, 8)}) joined private room ${room.name}` });
     });
 
-    // Admin events
-    socket.on('adminConnect', (data) => {
-        // Verify admin password
-        if (!data || data.password !== ADMIN_PASSWORD) {
-            socket.emit('adminAuthFailed', { message: 'Invalid password' });
+    // Admin events (require authenticated admin session via HTTP)
+    socket.on('adminConnect', () => {
+        if (!session || !session.adminToken) {
+            socket.emit('adminAuthFailed', { message: 'Not authenticated. Please login via /admin/login' });
+            return;
+        }
+        
+        const adminSession = db.validateAdminSession(session.adminToken);
+        if (!adminSession || !adminSession.is_admin) {
+            socket.emit('adminAuthFailed', { message: 'Invalid or expired session' });
             return;
         }
         
@@ -522,6 +911,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('adminCreateRoom', (roomData) => {
+        if (!adminSockets.has(socket)) return;
+        
         const roomCode = roomData.type === 'private' ? generateRoomCode() : null;
         const newRoom = {
             id: 'room_' + Date.now(),
@@ -539,6 +930,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('adminDeleteRoom', (roomId) => {
+        if (!adminSockets.has(socket)) return;
+        
         if (roomId === 'default') {
             return; // Can't delete default room
         }
@@ -552,6 +945,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('adminKickPlayer', (playerId) => {
+        if (!adminSockets.has(socket)) return;
+        
         const playerSocket = io.sockets.sockets.get(playerId);
         if (playerSocket) {
             playerSocket.disconnect(true);
@@ -560,6 +955,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('adminClearAllBlocks', () => {
+        if (!adminSockets.has(socket)) return;
+        
         blocks.length = 0;
         rooms.forEach(room => {
             room.blocks.length = 0;
@@ -570,7 +967,13 @@ io.on('connection', (socket) => {
     });
 });
 
+// Clean expired sessions periodically
+setInterval(() => {
+    db.cleanExpiredSessions();
+}, 60 * 60 * 1000);
+
 server.listen(80, () => {
     console.log('🎮 Block Battle Arena server running on http://localhost');
-    console.log('⚙️  Admin panel available at http://localhost/admin');
+    console.log('⚙️  Admin panel available at http://localhost/admin/login');
+    console.log('📊 Leaderboard at http://localhost/leaderboard');
 });

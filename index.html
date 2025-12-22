@@ -105,10 +105,15 @@
       </div>
     </div>
     
-    <div id="usernameOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); z-index:2000; display:flex; justify-content:center; align-items:center; flex-direction:column;">
-      <div style="color:white; font-size:40px; margin-bottom:20px;">Enter Username</div>
-      <input type="text" id="usernameInput" class="mui-textfield" style="font-size:20px; padding:10px; margin-bottom:20px; width:300px; max-width:90%;" placeholder="Username" maxlength="15">
-      <button id="startGameBtn" class="mui-btn mui-btn--primary mui-btn--raised mui-btn--large">Start Game</button>
+    <div id="usernameOverlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:2000; display:flex; justify-content:center; align-items:center; flex-direction:column;">
+      <div style="color:white; font-size:40px; margin-bottom:10px;">🎮 Block Battle Arena</div>
+      <div id="welcomeMessage" style="color:#4a90d9; font-size:24px; margin-bottom:30px;">Loading...</div>
+      <input type="text" id="usernameInput" class="mui-textfield" style="font-size:20px; padding:10px; margin-bottom:20px; width:300px; max-width:90%; text-align:center;" placeholder="Username" maxlength="15" disabled>
+      <button id="startGameBtn" class="mui-btn mui-btn--primary mui-btn--raised mui-btn--large">Play Now!</button>
+      <div style="margin-top:20px; display:flex; gap:10px;">
+        <a href="/leaderboard" target="_blank" class="mui-btn mui-btn--accent mui-btn--raised">🏆 Leaderboard</a>
+        <button id="viewProfileBtn" class="mui-btn mui-btn--raised" style="display:none;">👤 My Profile</button>
+      </div>
     </div>
     <div id="killFeed" style="position:fixed; top:20px; right:20px; text-align:right; z-index:1500; pointer-events:none;"></div>
     
