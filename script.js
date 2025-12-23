@@ -109,6 +109,11 @@ const closeRoomSelector = document.getElementById("closeRoomSelector");
 const settingsBtn = document.getElementById("settingsBtn");
 const settingsMenu = document.getElementById("settingsMenu");
 const browseRoomsBtn = document.getElementById("browseRoomsBtn");
+const loadingScreen = document.getElementById("loadingScreen");
+const loadingBar = document.getElementById("loadingBar");
+const loadingText = document.getElementById("loadingText");
+const loadingPercent = document.getElementById("loadingPercent");
+let modelsLoaded = false;
 const toggleThirdPersonBtn = document.getElementById("toggleThirdPersonBtn");
 const joinPrivateRoomBtn = document.getElementById("joinPrivateRoomBtn");
 const privateRoomOverlay = document.getElementById("privateRoomOverlay");
@@ -474,6 +479,7 @@ const DRONE_MODEL_URL = "https://files.catbox.moe/z7hxt9.glb";
 const ULTIMATE_MODEL_URL = "https://files.catbox.moe/84ufxa.glb"; // TODO: Replace with actual ultimate model URL
 const BALL_MODEL_URL = "https://files.catbox.moe/5esvct.glb"; // TODO: Replace with actual ball model URL
 const KATANA_MODEL_URL = "https://files.catbox.moe/nlqntj.glb"; // TODO: Replace with actual katana model URL
+const DRONE_BOMB_MODEL_URL = "https://files.catbox.moe/qeyyrr.glb"; // TODO: Replace with actual drone bomb model URL
 
 // ============ HELPER FUNCTIONS ============
 
@@ -1262,6 +1268,11 @@ var createScene = function () {
                     if (mesh.name === "skybox") return false;
                     if (mesh.name === "front") return false;
                     if (mesh === playerPhysicsBody) return false;
+                    // Exclude bomb meshes (drone bomb and its loaded model)
+                    if (mesh.name.startsWith("bomb")) return false;
+                    if (mesh.name.includes("Bomb")) return false;
+                    // Exclude meshes that are not pickable (loaded models set isPickable = false)
+                    if (!mesh.isPickable) return false;
                     
                     // Check if this mesh is a descendant of droneMesh (including loaded model meshes)
                     let current = mesh;
@@ -1941,16 +1952,94 @@ var createScene = function () {
         
         canDropBomb = false;
         
-        // Create bomb (grenade-like)
+        // Create invisible physics bomb
         const bomb = BABYLON.MeshBuilder.CreateSphere("droneBomb", {diameter: 0.4, segments: 16}, scene);
-        const bombMat = new BABYLON.StandardMaterial("bombMat", scene);
-        bombMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-        bombMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
-        bomb.material = bombMat;
+        bomb.visibility = 0; // Make physics sphere invisible
         
         // Drop from drone position
         bomb.position.copyFrom(droneMesh.position);
         bomb.position.y -= 0.5;
+        
+        // Track animation groups count before loading to find new ones
+        const animGroupCountBefore = scene.animationGroups.length;
+        
+        // Load the 3D model for visual appearance (async, doesn't affect mechanics)
+        try {
+            BABYLON.SceneLoader.ImportMesh("", DRONE_BOMB_MODEL_URL, "", scene, function(meshes, particleSystems, skeletons, animationGroups) {
+                if (meshes.length > 0 && bomb && !bomb.isDisposed()) {
+                    const bombModel = new BABYLON.TransformNode("bombModel", scene);
+                    
+                    // Add all meshes
+                    meshes.forEach(mesh => {
+                        mesh.parent = bombModel;
+                        mesh.isPickable = false;
+                        // Ensure mesh doesn't interfere with game logic
+                        if (mesh.actionManager) {
+                            mesh.actionManager.dispose();
+                            mesh.actionManager = null;
+                        }
+                    });
+                    
+                    bombModel.parent = bomb;
+                    bombModel.position = new BABYLON.Vector3(0, 0, 0);
+                    bombModel.scaling = new BABYLON.Vector3(0.3, 0.3, 0.3); // Adjust scale as needed
+                    bomb.bombModel = bombModel;
+                    
+                    // Get newly added animation groups from scene
+                    const newAnimGroups = scene.animationGroups.slice(animGroupCountBefore);
+                    
+                    // Debug logging
+                    console.log("Bomb model loaded - meshes:", meshes.length);
+                    console.log("Animation groups from callback:", animationGroups ? animationGroups.length : 0);
+                    console.log("New animation groups from scene:", newAnimGroups.length);
+                    console.log("Total scene animation groups:", scene.animationGroups.length);
+                    if (animationGroups && animationGroups.length > 0) {
+                        console.log("Animation group names:", animationGroups.map(a => a.name));
+                    }
+                    
+                    // Play all new animations
+                    if (newAnimGroups.length > 0) {
+                        console.log("Playing new anim groups from scene");
+                        newAnimGroups.forEach(animGroup => {
+                            console.log("Starting animation:", animGroup.name, "from:", animGroup.from, "to:", animGroup.to);
+                            animGroup.stop();
+                            animGroup.start(true, 1.0, animGroup.from, animGroup.to, false);
+                        });
+                        bomb.animationGroups = newAnimGroups;
+                    } else if (animationGroups && animationGroups.length > 0) {
+                        // Fallback to callback parameter
+                        console.log("Playing anim groups from callback");
+                        animationGroups.forEach(animGroup => {
+                            console.log("Starting animation:", animGroup.name, "from:", animGroup.from, "to:", animGroup.to);
+                            animGroup.stop();
+                            animGroup.start(true, 1.0, animGroup.from, animGroup.to, false);
+                        });
+                        bomb.animationGroups = animationGroups;
+                    } else {
+                        console.log("No animation groups found!");
+                    }
+                }
+            }, null, function(sceneRef, message, exception) {
+                // Model load failed - show fallback visual
+                console.error("Failed to load bomb model:", message, exception);
+                if (bomb && !bomb.isDisposed()) {
+                    bomb.visibility = 1;
+                    const fallbackMat = new BABYLON.StandardMaterial("bombFallbackMat_" + Date.now(), scene);
+                    fallbackMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                    fallbackMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
+                    bomb.material = fallbackMat;
+                }
+            });
+        } catch (e) {
+            // If model loading throws, show fallback visual
+            if (bomb && !bomb.isDisposed()) {
+                bomb.visibility = 1;
+                const fallbackMat = new BABYLON.StandardMaterial("bombFallbackMat_" + Date.now(), scene);
+                fallbackMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                fallbackMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
+                bomb.material = fallbackMat;
+            }
+        }
         
         // Emit bomb drop to other players
         socket.emit('droneBombDropped', {
@@ -2089,36 +2178,67 @@ const scene = createScene();
 function preloadModels() {
     console.log("Preloading 3D models...");
     
-    // Preload drone model - load it once to cache, then dispose
-    BABYLON.SceneLoader.LoadAssetContainer(DRONE_MODEL_URL, "", scene, function(container) {
-        console.log("Drone model cached successfully");
-        // Don't add to scene, just caching for later use
-    }, null, function(scene, message, exception) {
-        console.warn("Failed to preload drone model (will load on first use):", message);
-    });
+    const modelsToLoad = [
+        { url: DRONE_MODEL_URL, name: "Drone" },
+        { url: ULTIMATE_MODEL_URL, name: "Ultimate" },
+        { url: BALL_MODEL_URL, name: "Ball" },
+        { url: KATANA_MODEL_URL, name: "Katana" },
+        { url: DRONE_BOMB_MODEL_URL, name: "Drone Bomb" }
+    ];
     
-    // Preload ultimate model - load it once to cache, then dispose
-    BABYLON.SceneLoader.LoadAssetContainer(ULTIMATE_MODEL_URL, "", scene, function(container) {
-        console.log("Ultimate model cached successfully");
-        // Don't add to scene, just caching for later use
-    }, null, function(scene, message, exception) {
-        console.warn("Failed to preload ultimate model (will load on first use):", message);
-    });
+    let loadedCount = 0;
+    const totalModels = modelsToLoad.length;
     
-    // Preload ball model - load it once to cache, then dispose
-    BABYLON.SceneLoader.LoadAssetContainer(BALL_MODEL_URL, "", scene, function(container) {
-        console.log("Ball model cached successfully");
-        // Don't add to scene, just caching for later use
-    }, null, function(scene, message, exception) {
-        console.warn("Failed to preload ball model (will load on first use):", message);
-    });
+    function updateLoadingProgress(modelName, success) {
+        loadedCount++;
+        const progress = Math.round((loadedCount / totalModels) * 100);
+        
+        if (loadingBar) loadingBar.style.width = progress + "%";
+        if (loadingPercent) loadingPercent.textContent = progress + "%";
+        if (loadingText) loadingText.textContent = success ? 
+            `Loaded ${modelName}...` : 
+            `${modelName} will load on use...`;
+        
+        console.log(`Loading progress: ${loadedCount}/${totalModels} (${progress}%) - ${modelName}`);
+        
+        if (loadedCount >= totalModels) {
+            onAllModelsLoaded();
+        }
+    }
     
-    // Preload katana model - load it once to cache, then dispose
-    BABYLON.SceneLoader.LoadAssetContainer(KATANA_MODEL_URL, "", scene, function(container) {
-        console.log("Katana model cached successfully");
-        // Don't add to scene, just caching for later use
-    }, null, function(scene, message, exception) {
-        console.warn("Failed to preload katana model (will load on first use):", message);
+    function onAllModelsLoaded() {
+        console.log("All models loaded!");
+        modelsLoaded = true;
+        
+        if (loadingText) loadingText.textContent = "Ready!";
+        
+        // Fade out loading screen after a brief moment
+        setTimeout(() => {
+            if (loadingScreen) {
+                loadingScreen.style.transition = "opacity 0.5s ease";
+                loadingScreen.style.opacity = "0";
+                setTimeout(() => {
+                    loadingScreen.style.display = "none";
+                }, 500);
+            }
+        }, 300);
+    }
+    
+    // Load all models
+    modelsToLoad.forEach(model => {
+        BABYLON.SceneLoader.LoadAssetContainer(model.url, "", scene, 
+            function(container) {
+                console.log(`${model.name} model cached successfully`);
+                updateLoadingProgress(model.name, true);
+            }, 
+            function(event) {
+                // Progress callback for individual model (optional)
+            },
+            function(scene, message, exception) {
+                console.warn(`Failed to preload ${model.name} model (will load on first use):`, message);
+                updateLoadingProgress(model.name, false);
+            }
+        );
     });
 }
 
@@ -2991,13 +3111,76 @@ socket.on('droneBombExplosion', (explosionData) => {
 
 // Receive drone bomb dropped by another player (show falling bomb)
 socket.on('droneBombDropped', (bombData) => {
+    // Create invisible physics bomb
     const bomb = BABYLON.MeshBuilder.CreateSphere("otherDroneBomb", {diameter: 0.4, segments: 16}, scene);
-    const bombMat = new BABYLON.StandardMaterial("otherBombMat", scene);
-    bombMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
-    bombMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
-    bomb.material = bombMat;
+    bomb.visibility = 0; // Make physics sphere invisible
     
     bomb.position.set(bombData.x, bombData.y, bombData.z);
+    
+    // Track animation groups count before loading to find new ones
+    const animGroupCountBefore = scene.animationGroups.length;
+    
+    // Load the 3D model for visual appearance (async, doesn't affect mechanics)
+    try {
+        BABYLON.SceneLoader.ImportMesh("", DRONE_BOMB_MODEL_URL, "", scene, function(meshes, particleSystems, skeletons, animationGroups) {
+            if (meshes.length > 0 && bomb && !bomb.isDisposed()) {
+                const bombModel = new BABYLON.TransformNode("otherBombModel", scene);
+                
+                // Add all meshes
+                meshes.forEach(mesh => {
+                    mesh.parent = bombModel;
+                    mesh.isPickable = false;
+                    // Ensure mesh doesn't interfere with game logic
+                    if (mesh.actionManager) {
+                        mesh.actionManager.dispose();
+                        mesh.actionManager = null;
+                    }
+                });
+                
+                bombModel.parent = bomb;
+                bombModel.position = new BABYLON.Vector3(0, 0, 0);
+                bombModel.scaling = new BABYLON.Vector3(0.3, 0.3, 0.3); // Adjust scale as needed
+                bomb.bombModel = bombModel;
+                
+                // Get newly added animation groups from scene
+                const newAnimGroups = scene.animationGroups.slice(animGroupCountBefore);
+                
+                // Play all new animations
+                if (newAnimGroups.length > 0) {
+                    newAnimGroups.forEach(animGroup => {
+                        animGroup.stop();
+                        animGroup.start(true, 1.0, animGroup.from, animGroup.to, false);
+                    });
+                    bomb.animationGroups = newAnimGroups;
+                } else if (animationGroups && animationGroups.length > 0) {
+                    // Fallback to callback parameter
+                    animationGroups.forEach(animGroup => {
+                        animGroup.stop();
+                        animGroup.start(true, 1.0, animGroup.from, animGroup.to, false);
+                    });
+                    bomb.animationGroups = animationGroups;
+                }
+            }
+        }, null, function(sceneRef, message, exception) {
+            // Model load failed - show fallback visual
+            if (bomb && !bomb.isDisposed()) {
+                bomb.visibility = 1;
+                const fallbackMat = new BABYLON.StandardMaterial("otherBombFallbackMat_" + Date.now(), scene);
+                fallbackMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+                fallbackMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
+                bomb.material = fallbackMat;
+            }
+        });
+    } catch (e) {
+        // If model loading throws, show fallback visual
+        if (bomb && !bomb.isDisposed()) {
+            bomb.visibility = 1;
+            const fallbackMat = new BABYLON.StandardMaterial("otherBombFallbackMat_" + Date.now(), scene);
+            fallbackMat.diffuseColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+            fallbackMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
+            bomb.material = fallbackMat;
+        }
+    }
     
     // Add physics so it falls
     bomb.physicsImpostor = new BABYLON.PhysicsImpostor(
