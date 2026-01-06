@@ -574,6 +574,8 @@ function createMineMesh(mineId, position) {
             const mineModel = new BABYLON.TransformNode("mineModel_" + mineId, scene);
             
             meshes.forEach(mesh => {
+                // Hide mesh initially to prevent it appearing at world origin
+                mesh.setEnabled(false);
                 mesh.parent = mineModel;
                 mesh.isPickable = false;
             });
@@ -583,6 +585,11 @@ function createMineMesh(mineId, position) {
             mineModel.scaling = new BABYLON.Vector3(0.52, 0.52, 0.52); // Adjust scale as needed
             mineModel.rotation.x = -Math.PI / 2; // Rotate to lay flat on the ground
             mine.mineModel = mineModel;
+            
+            // Re-enable meshes after parenting
+            meshes.forEach(mesh => {
+                mesh.setEnabled(true);
+            });
             
             // Add flashing effect to the 3D model
             let flashState = true;
@@ -1536,8 +1543,12 @@ var createScene = function () {
                 const ultimateModel = new BABYLON.TransformNode("ultimateModel", scene);
                 
                 meshes.forEach(mesh => {
+                    // Hide mesh initially to prevent it appearing at world origin
+                    mesh.setEnabled(false);
                     mesh.parent = ultimateModel;
                     mesh.isPickable = false;
+                    // Re-enable after parenting
+                    mesh.setEnabled(true);
                 });
                 
                 ultimateModel.parent = ultimateBall;
@@ -2988,8 +2999,12 @@ socket.on('ultimateShot', (ultimateData) => {
             const ultimateModel = new BABYLON.TransformNode("ultimateModel", scene);
             
             meshes.forEach(mesh => {
+                // Hide mesh initially to prevent it appearing at world origin
+                mesh.setEnabled(false);
                 mesh.parent = ultimateModel;
                 mesh.isPickable = false;
+                // Re-enable after parenting
+                mesh.setEnabled(true);
             });
             
             ultimateModel.parent = ultimateBall;
