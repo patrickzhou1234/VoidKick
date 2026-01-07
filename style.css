@@ -145,6 +145,59 @@ body {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 
+#chatMessages::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-message {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: white;
+  font-size: 14px;
+  word-wrap: break-word;
+  max-width: 100%;
+  pointer-events: auto;
+  animation: fadeIn 0.3s ease-out;
+  border-left: 3px solid transparent;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-username {
+  font-weight: bold;
+  margin-right: 5px;
+}
+
+.chat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-right: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+}
+
+.badge-admin {
+  background: linear-gradient(135deg, #ff0000 0%, #990000 100%);
+  color: white;
+  box-shadow: 0 0 5px rgba(255, 0, 0, 0.5);
+}
+
+.badge-vip {
+  background: linear-gradient(135deg, #ffd700 0%, #b8860b 100%);
+  color: black;
+  box-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+}
+
 #clearBtn {
   background-color: #e53935 !important;
   text-transform: none !important;

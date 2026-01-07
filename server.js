@@ -542,6 +542,10 @@ io.on('connection', (socket) => {
             odPlayerId: session.user.id,
             username: session.user.username,
             profileId: session.user.profileId,
+            profilePhoto: user.profile_photo,
+            isAdmin: user.is_admin === 1,
+            isVIP: user.is_vip === 1,
+            profileTitle: user.profile_title,
             ip: clientIp,
             x: 0,
             y: 3,
@@ -703,6 +707,50 @@ io.on('connection', (socket) => {
             // Broadcast to other players in the same room
             socket.to(roomId).emit('blockHit', hitData);
         }
+    });
+
+    // Handle chat messages
+    socket.on('chatMessage', (message) => {
+        const player = players[socket.id];
+        if (!player) return;
+
+        // Rate limiting: 1 message per second (500ms for VIP/Admin)
+        const now = Date.now();
+        const cooldown = (player.isAdmin || player.isVIP) ? 500 : 1000;
+        
+        if (player.lastMessageTime && (now - player.lastMessageTime) < cooldown) {
+            const timeLeft = Math.ceil((cooldown - (now - player.lastMessageTime)) / 1000);
+            socket.emit('chatError', { message: `Please wait ${timeLeft}s before sending another message.` });
+            return;
+        }
+
+        // Basic message validation
+        if (typeof message !== 'string' || message.trim().length === 0) return;
+        const sanitizedMessage = message.trim().substring(0, 100);
+
+        // Update last message time
+        player.lastMessageTime = now;
+
+        const chatData = {
+            id: socket.id,
+            username: player.username,
+            message: sanitizedMessage,
+            isAdmin: player.isAdmin,
+            isVIP: player.isVIP,
+            profileTitle: player.profileTitle,
+            profileId: player.profileId,
+            profilePicUrl: player.profilePhoto
+        };
+
+        // Broadcast to everyone in the same room
+        io.to(player.roomId).emit('chatMessage', chatData);
+        
+        // Notify admins
+        broadcastToAdmins('adminLog', { 
+            type: 'chat', 
+            message: `[CHAT] ${player.username}: ${sanitizedMessage}`,
+            roomId: player.roomId
+        });
     });
 
     socket.on('shootBall', (ballData) => {

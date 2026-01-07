@@ -2249,6 +2249,9 @@ var createScene = function () {
 function handleMovement() {
     if (!playerPhysicsBody || !playerPhysicsBody.physicsImpostor) return;
     
+    // Disable movement while chatting
+    if (document.activeElement === document.getElementById('chatInput')) return;
+    
     var forward = camera.getDirection(new BABYLON.Vector3(0, 0, 1));
     var right = camera.getDirection(new BABYLON.Vector3(1, 0, 0));
     forward.y = 0;
@@ -2383,6 +2386,14 @@ function preloadModels() {
 
 // Preload models on startup
 preloadModels();
+
+// Chat input blur handler
+document.getElementById('chatInput').addEventListener('blur', function() {
+    document.getElementById('chatInputContainer').style.opacity = '0';
+    if (document.getElementById('chatMessages').children.length === 0) {
+        document.getElementById('chatWrapper').style.display = 'none';
+    }
+});
 
 // Velocity-based prediction and smooth interpolation for other players
 let lastFrameTime = Date.now();
@@ -3322,6 +3333,90 @@ socket.on('grenadeExplosion', (explosionData) => {
     explodeGrenade(position, explosionData.size, explosionData.shooterId);
 });
 
+// ============ CHAT SYSTEM ============
+
+// Receive chat messages from server
+socket.on('chatMessage', (data) => {
+    addChatMessage(data);
+});
+
+// Handle chat errors (rate limiting, etc.)
+socket.on('chatError', (data) => {
+    // Show error message in red
+    const errorDiv = document.createElement('div');
+    errorDiv.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(255,0,0,0.9);color:white;padding:15px 30px;border-radius:8px;z-index:9999;font-size:16px;font-weight:bold;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+    errorDiv.textContent = data.message;
+    document.body.appendChild(errorDiv);
+    
+    // Remove after 3 seconds
+    setTimeout(() => errorDiv.remove(), 3000);
+});
+
+function addChatMessage(data) {
+    const chatWrapper = document.getElementById('chatWrapper');
+    const chatMessages = document.getElementById('chatMessages');
+
+    // Ensure chat is visible
+    chatWrapper.style.display = 'block';
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message';
+
+    // Create badges based on roles
+    let badgeHtml = '';
+    if (data.isAdmin) {
+        badgeHtml = '<span class="chat-badge badge-admin">Admin</span>';
+    } else if (data.isVIP) {
+        badgeHtml = '<span class="chat-badge badge-vip">VIP</span>';
+    }
+
+    // Add profile title if it exists
+    if (data.profileTitle) {
+        badgeHtml += `<span class="chat-badge" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: #ccc;">${data.profileTitle}</span>`;
+    }
+
+    // Profile picture (always show, fallback to default if missing)
+    const profilePicUrl = data.profilePicUrl || 'https://ui-avatars.com/api/?name=' + encodeURIComponent(data.username || 'Player') + '&background=4a90d9&color=fff&size=128';
+    const profilePicHtml = `<img src="${profilePicUrl}" alt="Profile" style="width:32px;height:32px;border-radius:50%;object-fit:cover;border:2px solid #4a90d9;" onerror="this.src='https://ui-avatars.com/api/?name=User&background=4a90d9&color=fff&size=128'">`;
+
+    // Set message content with sanitized HTML for badges, profile pic, and username
+    messageDiv.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 8px;">
+            ${profilePicHtml}
+            <div style="display: flex; flex-direction: column;">
+                <div style="display: flex; align-items: center; gap: 5px;">
+                    ${badgeHtml}
+                    <span class="chat-username" style="color: ${data.isAdmin ? '#ff3333' : (data.isVIP ? '#ffd700' : '#4a90d9')}">${data.username}:</span>
+                </div>
+                <span class="chat-text" style="flex: 1; word-break: break-all;">${data.message}</span>
+            </div>
+        </div>
+    `;
+
+    chatMessages.appendChild(messageDiv);
+
+    // Auto-scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Clean up old messages after 15 seconds
+    setTimeout(() => {
+        // Only fade/remove if input is not focused
+        if (document.activeElement !== document.getElementById('chatInput')) {
+            messageDiv.style.transition = 'opacity 2s';
+            messageDiv.style.opacity = '0';
+            setTimeout(() => {
+                if (messageDiv.parentNode === chatMessages) {
+                    messageDiv.remove();
+                    // Hide wrapper if no messages left and input not focused
+                    if (chatMessages.children.length === 0 && document.activeElement !== document.getElementById('chatInput')) {
+                        chatWrapper.style.display = 'none';
+                    }
+                }
+            }, 2000);
+        }
+    }, 15000);
+}
+
 // Receive drone bomb explosion from server (lighter effect - just flash and knockback)
 socket.on('droneBombExplosion', (explosionData) => {
     const position = new BABYLON.Vector3(explosionData.x, explosionData.y, explosionData.z);
@@ -3810,8 +3905,42 @@ clearBtn.onclick = function() {
 
 // Key state tracking
 document.addEventListener('keydown', function(event) {
+    if (document.activeElement === document.getElementById('chatInput')) {
+        if (event.code === "Enter") {
+            const chatInput = document.getElementById('chatInput');
+            const chatInputContainer = document.getElementById('chatInputContainer');
+            const chatWrapper = document.getElementById('chatWrapper');
+            const message = chatInput.value.trim();
+            
+            if (message.length > 0) {
+                socket.emit('chatMessage', message);
+            }
+            chatInput.value = '';
+            chatInput.blur();
+            chatInputContainer.style.opacity = '0';
+            // If no messages, hide wrapper after a delay
+            if (document.getElementById('chatMessages').children.length === 0) {
+                chatWrapper.style.display = 'none';
+            }
+        }
+        return; // Don't process other keys while chatting
+    }
+
     keysPressed[event.code] = true;
     
+    // Chat functionality - Toggle with Enter
+    if (event.code === "Enter") {
+        const chatInput = document.getElementById('chatInput');
+        const chatInputContainer = document.getElementById('chatInputContainer');
+        const chatWrapper = document.getElementById('chatWrapper');
+
+        chatWrapper.style.display = 'block';
+        chatInputContainer.style.opacity = '1';
+        chatInput.focus();
+        event.preventDefault(); // Prevent enter from being typed in field
+        return;
+    }
+
     // Toggle Camera 'C'
     if (event.code === "KeyC") {
         isThirdPerson = !isThirdPerson;
@@ -3870,6 +3999,8 @@ document.addEventListener('keydown', function(event) {
 });
 
 document.addEventListener('keyup', function(event) {
+    if (document.activeElement === document.getElementById('chatInput')) return;
+    
     keysPressed[event.code] = false;
     
     // Cancel ultimate if X is released before fully charged
