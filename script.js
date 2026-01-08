@@ -121,6 +121,7 @@ const privateRoomCodeInput = document.getElementById("privateRoomCodeInput");
 const joinPrivateRoomSubmit = document.getElementById("joinPrivateRoomSubmit");
 const closePrivateRoomOverlay = document.getElementById("closePrivateRoomOverlay");
 const currentRoomDisplay = document.getElementById("currentRoomDisplay");
+const howToPlayBtn = document.getElementById("howToPlayBtn");
 
 // Toggle settings menu
 settingsBtn.onclick = function(e) {
@@ -131,6 +132,113 @@ settingsBtn.onclick = function(e) {
     } else {
         menu.style.display = 'none';
     }
+};
+
+// How to Play button
+howToPlayBtn.onclick = function() {
+    settingsMenu.style.display = 'none';
+    
+    Swal.fire({
+        title: '<span style="font-size:32px;">🎮 How to Play</span>',
+        html: `
+            <div style="text-align:left; max-height:60vh; overflow-y:auto; padding:10px;">
+                <h3 style="color:#4a90d9; margin-top:15px;">🎯 Objective</h3>
+                <p style="margin:8px 0;">Eliminate other players using various weapons and abilities. Survive and dominate the arena!</p>
+                
+                <h3 style="color:#4a90d9; margin-top:20px;">🕹️ Controls</h3>
+                <div style="background:rgba(0,0,0,0.2); padding:12px; border-radius:8px; margin:8px 0;">
+                    <p><strong>WASD</strong> - Move around</p>
+                    <p><strong>SPACE</strong> - Jump</p>
+                    <p><strong>Mouse</strong> - Look around</p>
+                    <p><strong>Left Click</strong> - Shoot ball projectile</p>
+                    <p><strong>Right Click</strong> - Place block (color & type from menu)</p>
+                    <p><strong>Enter</strong> - Open chat</p>
+                </div>
+                
+                <h3 style="color:#4a90d9; margin-top:20px;">⚔️ Weapons & Abilities</h3>
+                
+                <div style="background:rgba(255,100,0,0.1); padding:12px; border-radius:8px; margin:12px 0; border-left:4px solid #ff6400;">
+                    <h4 style="margin:0 0 8px 0;">💥 Ultimate Ability (X)</h4>
+                    <p style="margin:5px 0;"><strong>Hold X</strong> to charge for 3 seconds</p>
+                    <p style="margin:5px 0;">Release to fire a massive explosive projectile</p>
+                    <p style="margin:5px 0; color:#ff9800;">⚡ Instant kill on direct hit!</p>
+                </div>
+                
+                <div style="background:rgba(0,200,0,0.1); padding:12px; border-radius:8px; margin:12px 0; border-left:4px solid #00c800;">
+                    <h4 style="margin:0 0 8px 0;">💣 Grenade (Q)</h4>
+                    <p style="margin:5px 0;"><strong>Hold Q</strong> to charge (larger = bigger explosion)</p>
+                    <p style="margin:5px 0;">Release to throw. Explodes on impact!</p>
+                    <p style="margin:5px 0;">Creates explosive fragments that deal damage</p>
+                </div>
+                
+                <div style="background:rgba(255,0,100,0.1); padding:12px; border-radius:8px; margin:12px 0; border-left:4px solid #ff0064;">
+                    <h4 style="margin:0 0 8px 0;">🏏 Katana Bat (F)</h4>
+                    <p style="margin:5px 0;"><strong>Press F</strong> to swing your katana</p>
+                    <p style="margin:5px 0;">Massive knockback effect - send players flying!</p>
+                    <p style="margin:5px 0;">1.5 second cooldown</p>
+                </div>
+                
+                <div style="background:rgba(0,255,255,0.1); padding:12px; border-radius:8px; margin:12px 0; border-left:4px solid #00ffff;">
+                    <h4 style="margin:0 0 8px 0;">🚁 Combat Drone (R)</h4>
+                    <p style="margin:5px 0;"><strong>Hold R</strong> to charge for 2.5 seconds</p>
+                    <p style="margin:5px 0;">Take control of a flying drone with camera view</p>
+                    <p style="margin:5px 0;"><strong>WASD</strong> to fly, <strong>Click</strong> to drop bombs</p>
+                    <p style="margin:5px 0;"><strong>P</strong> to exit drone mode</p>
+                    <p style="margin:5px 0; color:#ff5555;">⚠️ Drone can be destroyed (2 hit points)</p>
+                </div>
+                
+                <div style="background:rgba(150,150,0,0.1); padding:12px; border-radius:8px; margin:12px 0; border-left:4px solid #969600;">
+                    <h4 style="margin:0 0 8px 0;">💀 Proximity Mine (Selectable from Build)</h4>
+                    <p style="margin:5px 0;"><strong>Left click</strong> to place a mine at your position</p>
+                    <p style="margin:5px 0;">Mines flash red and explode when players get close</p>
+                    <p style="margin:5px 0;">Launches players upward with explosive force</p>
+                </div>
+                
+                <h3 style="color:#4a90d9; margin-top:20px;">🏗️ Building System</h3>
+                <div style="background:rgba(0,0,0,0.2); padding:12px; border-radius:8px; margin:8px 0;">
+                    <p>Use the top menu (⇧ button) to customize your blocks:</p>
+                    <p style="margin:8px 0;"><strong>Color Picker</strong> - Choose block color</p>
+                    <p style="margin:8px 0;"><strong>Mesh Type</strong> - Box, Sphere, Cylinder, Capsule, Mine</p>
+                    <p style="margin:8px 0;"><strong>Size Slider</strong> - Adjust block size</p>
+                    <p style="margin:8px 0;"><strong>Slimy</strong> - Makes blocks bouncy/slippery</p>
+                    <p style="margin:8px 0;">Build defensive structures or platforms!</p>
+                </div>
+                
+                <h3 style="color:#4a90d9; margin-top:20px;">💀 Death & Respawn</h3>
+                <div style="background:rgba(0,0,0,0.2); padding:12px; border-radius:8px; margin:8px 0;">
+                    <p>• Fall below the map or go too high = Death!</p>
+                    <p>• Hit by weapons/abilities = Death!</p>
+                    <p>• Respawn after 5 seconds at spawn point</p>
+                    <p>• Your stats track kills, deaths, and K/D ratio</p>
+                </div>
+                
+                <h3 style="color:#4a90d9; margin-top:20px;">🏆 Tips & Strategy</h3>
+                <div style="background:rgba(74,144,217,0.1); padding:12px; border-radius:8px; margin:8px 0;">
+                    <p>✓ Use blocks to decrease momentum</p>
+                    <p>✓ Charge ultimate for guaranteed kills</p>
+                    <p>✓ Katana bat is perfect for close combat</p>
+                    <p>✓ Hit other players with balls to boost them upwards a little. Then, use the katana bat to hit them again</p>
+                    <p>✓ KB Stick (Katana) is better when your opponent is above you.</p>
+                    <p>✓ Drone gives you aerial advantage</p>
+                    <p>✓ Place mines in high-traffic areas</p>
+                    <p>✓ Grenades are great for area denial</p>
+                    <p>✓ Keep moving to avoid becoming an easy target</p>
+                </div>
+                
+                <div style="text-align:center; margin-top:20px; padding:15px; background:rgba(74,144,217,0.2); border-radius:8px;">
+                    <p style="font-size:18px; margin:0;"><strong>🎮 Good luck and have fun!</strong></p>
+                </div>
+            </div>
+        `,
+        width: '700px',
+        confirmButtonText: 'Got it!',
+        confirmButtonColor: '#4a90d9',
+        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        color: '#e0e0e0',
+        customClass: {
+            popup: 'how-to-play-popup'
+        }
+    });
 };
 
 // Browse rooms from settings menu
