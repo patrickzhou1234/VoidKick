@@ -3556,8 +3556,8 @@ socket.on('droneBombExplosion', (explosionData) => {
     createFlashEffect(position);
     
     // Apply knockback to player if nearby (stronger to match grenade power)
-    const explosionRadius = 16;
-    const knockbackForce = 50;
+    const explosionRadius = 10;
+    const knockbackForce = 800;
     
     if (playerPhysicsBody && !isDead) {
         const dist = BABYLON.Vector3.Distance(playerPhysicsBody.position, position);
