@@ -550,6 +550,28 @@ const DEATH_HEIGHT = -15;
 const DEATH_CEILING = 100; // Die if you go above this height
 const SPAWN_POSITION = new BABYLON.Vector3(0, 3, 0);
 
+// Spawn immunity state
+let hasSpawnImmunity = false;
+let spawnImmunityTimer = null;
+const SPAWN_IMMUNITY_DURATION = 3000; // 3 seconds of immunity
+
+// Function to break spawn immunity (called when player attacks)
+function breakSpawnImmunity() {
+    if (hasSpawnImmunity) {
+        hasSpawnImmunity = false;
+        if (spawnImmunityTimer) {
+            clearTimeout(spawnImmunityTimer);
+            spawnImmunityTimer = null;
+        }
+        // Hide the immunity indicator
+        const immunityIndicator = document.getElementById('spawnImmunityIndicator');
+        if (immunityIndicator) {
+            immunityIndicator.style.display = 'none';
+        }
+        console.log('Spawn immunity broken - player attacked!');
+    }
+}
+
 // Ultimate ability state
 let isChargingUltimate = false;
 let ultimateCharge = 0;
@@ -1630,6 +1652,46 @@ var createScene = function () {
         // Hide death overlay
         document.getElementById('deathOverlay').style.display = 'none';
         isDead = false;
+        
+        // Activate spawn immunity for 3 seconds
+        hasSpawnImmunity = true;
+        
+        // Show immunity indicator
+        let immunityIndicator = document.getElementById('spawnImmunityIndicator');
+        if (!immunityIndicator) {
+            immunityIndicator = document.createElement('div');
+            immunityIndicator.id = 'spawnImmunityIndicator';
+            immunityIndicator.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%, -60px); background:rgba(0,255,255,0.3); border:2px solid cyan; border-radius:10px; padding:10px 20px; color:white; font-size:18px; font-weight:bold; text-shadow:0 0 10px cyan; z-index:1000; pointer-events:none;';
+            document.body.appendChild(immunityIndicator);
+        }
+        immunityIndicator.innerHTML = '🛡️ SPAWN IMMUNITY (3s)';
+        immunityIndicator.style.display = 'block';
+        
+        // Countdown display
+        let timeLeft = 3;
+        const countdownInterval = setInterval(() => {
+            timeLeft--;
+            if (hasSpawnImmunity && timeLeft > 0) {
+                immunityIndicator.innerHTML = '🛡️ SPAWN IMMUNITY (' + timeLeft + 's)';
+            } else {
+                clearInterval(countdownInterval);
+            }
+        }, 1000);
+        
+        // Clear any existing timer
+        if (spawnImmunityTimer) {
+            clearTimeout(spawnImmunityTimer);
+        }
+        
+        // Set timer to remove immunity after 3 seconds
+        spawnImmunityTimer = setTimeout(() => {
+            hasSpawnImmunity = false;
+            spawnImmunityTimer = null;
+            immunityIndicator.style.display = 'none';
+            console.log('Spawn immunity expired');
+        }, SPAWN_IMMUNITY_DURATION);
+        
+        console.log('Spawn immunity activated for 3 seconds');
     }
     
     // Fire ultimate ability
@@ -1738,6 +1800,9 @@ var createScene = function () {
     // Start charging ultimate
     window.startChargingUltimate = function() {
         if (!isDead && !isChargingUltimate && !isChargingGrenade && !isChargingDrone && !isSwingingBat) {
+            // Break spawn immunity when attacking
+            breakSpawnImmunity();
+            
             isChargingUltimate = true;
             ultimateCharge = 0;
             document.getElementById('ultimateContainer').style.display = 'block';
@@ -1747,6 +1812,9 @@ var createScene = function () {
     // Swing bat
     window.swingBat = function() {
         if (!canSwingBat || isDead || isSwingingBat || isChargingUltimate || isChargingGrenade || isChargingDrone) return;
+        
+        // Break spawn immunity when attacking
+        breakSpawnImmunity();
         
         canSwingBat = false;
         isSwingingBat = true;
@@ -2007,6 +2075,10 @@ var createScene = function () {
     // Start charging grenade
     window.startChargingGrenade = function() {
         if (isDead || isChargingGrenade || isDroneMode || isChargingUltimate || isChargingDrone || isSwingingBat) return;
+        
+        // Break spawn immunity when attacking
+        breakSpawnImmunity();
+        
         isChargingGrenade = true;
         grenadeCharge = 0;
         currentAnimState = 'charging';
@@ -2015,6 +2087,10 @@ var createScene = function () {
     // Start charging drone
     window.startChargingDrone = function() {
         if (isDead || isChargingDrone || isDroneMode || isChargingUltimate || isChargingGrenade || isSwingingBat) return;
+        
+        // Break spawn immunity when attacking
+        breakSpawnImmunity();
+        
         isChargingDrone = true;
         droneCharge = 0;
         currentAnimState = 'charging';
@@ -2138,8 +2214,14 @@ var createScene = function () {
         isDroneMode = false;
         document.getElementById('droneModeIndicator').style.display = 'none';
         
-        // Cool camera transition back to player
-        if (droneCamera && droneMesh) {
+        // If player is dead, skip the transition animation to avoid camera conflicts
+        if (isDead) {
+            // Instant switch - no transition
+            scene.activeCamera = camera;
+            camera.attachControl(canvas, true);
+        }
+        // Cool camera transition back to player (only if alive)
+        else if (droneCamera && droneMesh && playerPhysicsBody) {
             const startPos = droneCamera.position.clone();
             const endPos = playerPhysicsBody.position.clone();
             endPos.y += 1; // Eye height
@@ -2152,9 +2234,11 @@ var createScene = function () {
             
             const transitionInterval = setInterval(() => {
                 transitionProgress += 0.08;
-                if (transitionProgress >= 1) {
+                if (transitionProgress >= 1 || isDead) {
                     clearInterval(transitionInterval);
-                    transitionCamera.dispose();
+                    if (transitionCamera && !transitionCamera.isDisposed) {
+                        transitionCamera.dispose();
+                    }
                     scene.activeCamera = camera;
                     camera.attachControl(canvas, true);
                 } else {
@@ -3101,6 +3185,11 @@ socket.on('ballShot', (ballData) => {
 
     // Check for collision with player
     ball.physicsImpostor.registerOnPhysicsCollide(playerPhysicsBody.physicsImpostor, () => {
+        // Check for spawn immunity
+        if (hasSpawnImmunity) {
+            console.log('BALL BLOCKED BY SPAWN IMMUNITY!');
+            return;
+        }
         // Apply massive knockback to player when hit
         const knockbackStrength = 12; 
         const knockbackDir = dir.clone();
@@ -3203,6 +3292,11 @@ socket.on('ultimateShot', (ultimateData) => {
     
     // Ultimate ball is an INSTANT KILL - triggers death on collision with player
     ultimateBall.physicsImpostor.registerOnPhysicsCollide(playerPhysicsBody.physicsImpostor, () => {
+        // Check for spawn immunity
+        if (hasSpawnImmunity) {
+            console.log('ULTIMATE BLOCKED BY SPAWN IMMUNITY!');
+            return;
+        }
         console.log('HIT BY ULTIMATE - INSTANT DEATH!');
         window.triggerDeath(ultimateData.shooterId, "Obliterated by Ultimate");
         // Dispose the ultimate ball after killing
@@ -3292,6 +3386,11 @@ socket.on('batSwung', (batData) => {
     
     // Check if we're close enough to get hit
     if (playerPhysicsBody) {
+        // Check for spawn immunity
+        if (hasSpawnImmunity) {
+            console.log('BAT SWING BLOCKED BY SPAWN IMMUNITY!');
+            return;
+        }
         const batPos = new BABYLON.Vector3(batData.x, batData.y, batData.z);
         const distance = BABYLON.Vector3.Distance(batPos, playerPhysicsBody.position);
         
@@ -3423,6 +3522,11 @@ function explodeGrenade(position, size, shooterId) {
         fragment.physicsImpostor.registerOnPhysicsCollide(
             playerPhysicsBody.physicsImpostor,
             () => {
+                // Check for spawn immunity
+                if (hasSpawnImmunity) {
+                    console.log('GRENADE BLOCKED BY SPAWN IMMUNITY!');
+                    return;
+                }
                 if (!isDead) {
                     // Stronger damage knockback
                     const knockbackDir = playerPhysicsBody.position.subtract(position).normalize();
@@ -3559,7 +3663,7 @@ socket.on('droneBombExplosion', (explosionData) => {
     const explosionRadius = 10;
     const knockbackForce = 800;
     
-    if (playerPhysicsBody && !isDead) {
+    if (playerPhysicsBody && !isDead && !hasSpawnImmunity) {
         const dist = BABYLON.Vector3.Distance(playerPhysicsBody.position, position);
         if (dist < explosionRadius) {
             const knockbackDir = playerPhysicsBody.position.subtract(position).normalize();
@@ -3574,6 +3678,8 @@ socket.on('droneBombExplosion', (explosionData) => {
             lastHitterTime = Date.now();
             lastHitCause = "Blown up by Drone";
         }
+    } else if (hasSpawnImmunity) {
+        console.log('DRONE BOMB BLOCKED BY SPAWN IMMUNITY!');
     }
 });
 
@@ -3944,6 +4050,9 @@ scene.onPointerObservable.add((pointerInfo) => {
             
             // Normal shooting - shoot ball
             if (!canShoot || isDead || isChargingUltimate || isChargingGrenade || isChargingDrone) return; // Fire rate limit and death check
+            
+            // Break spawn immunity when attacking
+            breakSpawnImmunity();
             
             canShoot = false;
             setTimeout(() => { canShoot = true; }, SHOOT_COOLDOWN);
