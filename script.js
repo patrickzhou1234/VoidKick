@@ -15,6 +15,9 @@ const spawnedBlocks = [];
 const spawnedBlocksById = {}; // Map of blockId -> block mesh for syncing
 let blockIdCounter = 0; // Local counter for generating block IDs
 
+// Jump state
+let playerCanJump = true;
+
 // Username state
 let myUsername = "Player";
 let myProfileId = null;
@@ -1085,10 +1088,27 @@ var createScene = function () {
     frontMat.alpha = 0.3;
     frontfacing.material = frontMat;
 
-    // Jump reload
+    // Jump state
     jumpreloading = false;
+    playerCanJump = true; // Reset to true when scene loads
 
     scene.registerBeforeRender(function() {
+        // Update jump availability based on grounded state
+        if (playerPhysicsBody && playerPhysicsBody.physicsImpostor) {
+            var vel = playerPhysicsBody.physicsImpostor.getLinearVelocity();
+            var groundRay = new BABYLON.Ray(playerPhysicsBody.position, new BABYLON.Vector3(0, -1, 0), 1.1);
+            var groundHit = scene.pickWithRay(groundRay, function (mesh) {
+                return mesh !== playerPhysicsBody && 
+                       !mesh.name.startsWith("player") && 
+                       mesh.name !== "skybox" &&
+                       mesh.name !== "front";
+            });
+            // Player can jump only when on ground with stable Y velocity
+            if (groundHit && groundHit.hit && vel.y > -1 && vel.y < 1) {
+                playerCanJump = true;
+            }
+        }
+        
         // Check for death (fell below world or went too high)
         if (!isDead && (playerPhysicsBody.position.y < DEATH_HEIGHT || playerPhysicsBody.position.y > DEATH_CEILING)) {
             // Determine if it was a suicide or kill based on last hit
@@ -2501,6 +2521,7 @@ function handleMovement() {
     
     // Brake/crouch - only works when grounded
     if (keysPressed['ShiftLeft'] || keysPressed['ShiftRight']) {
+        var currentVel = playerPhysicsBody.physicsImpostor.getLinearVelocity();
         var ray = new BABYLON.Ray(playerPhysicsBody.position, new BABYLON.Vector3(0, -1, 0), 1.1);
         var hit = scene.pickWithRay(ray, function (mesh) {
             // Exclude player physics body and all player visual mesh parts (names start with "player")
@@ -2510,8 +2531,11 @@ function handleMovement() {
                    mesh.name !== "front";
         });
 
-        if (hit && hit.hit) {
-            playerPhysicsBody.physicsImpostor.setLinearVelocity(playerPhysicsBody.physicsImpostor.getLinearVelocity().scale(0.9));
+        // Only brake if on the ground - Y velocity between -3 and 3 allows for small ground fluctuations
+        if (hit && hit.hit && currentVel.y > -3 && currentVel.y < 3) {
+            // Only scale horizontal velocity, preserve Y to not interfere with gravity
+            var newVel = playerPhysicsBody.physicsImpostor.getLinearVelocity();
+            playerPhysicsBody.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(newVel.x * 0.9, newVel.y, newVel.z * 0.9));
             playerPhysicsBody.physicsImpostor.setAngularVelocity(playerPhysicsBody.physicsImpostor.getAngularVelocity().scale(0.9));
         }
     }
@@ -4273,23 +4297,10 @@ document.addEventListener('keydown', function(event) {
 
     // Jump - only works when grounded and NOT in drone mode
     if (event.code === "Space" && !isDroneMode) {
-        if (!jumpreloading) {
-            // Check if grounded before allowing jump
-            var ray = new BABYLON.Ray(playerPhysicsBody.position, new BABYLON.Vector3(0, -1, 0), 1.1);
-            var hit = scene.pickWithRay(ray, function (mesh) {
-                return mesh !== playerPhysicsBody && 
-                       !mesh.name.startsWith("player") && 
-                       mesh.name !== "skybox" &&
-                       mesh.name !== "front";
-            });
-            
-            if (hit && hit.hit) {
-                jumpreloading = true;
-                playerPhysicsBody.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, 1, 0).scale(10), playerPhysicsBody.getAbsolutePosition());
-                setTimeout(function() {
-                    jumpreloading = false;
-                }, 500); // Reduced cooldown since we check grounded anyway
-            }
+        // Only allow jump if playerCanJump is true (set by render loop when grounded)
+        if (playerCanJump) {
+            playerCanJump = false; // Immediately prevent double jump
+            playerPhysicsBody.physicsImpostor.applyImpulse(new BABYLON.Vector3(0, 1, 0).scale(10), playerPhysicsBody.getAbsolutePosition());
         }
     }
     
