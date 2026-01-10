@@ -556,7 +556,7 @@ const SPAWN_POSITION = new BABYLON.Vector3(0, 3, 0);
 // Spawn immunity state
 let hasSpawnImmunity = false;
 let spawnImmunityTimer = null;
-const SPAWN_IMMUNITY_DURATION = 3000; // 3 seconds of immunity
+const SPAWN_IMMUNITY_DURATION = 5000; // 5 seconds of immunity
 
 // Function to break spawn immunity (called when player attacks)
 function breakSpawnImmunity() {
@@ -1840,7 +1840,7 @@ var createScene = function () {
         document.getElementById('deathOverlay').style.display = 'none';
         isDead = false;
         
-        // Activate spawn immunity for 3 seconds
+        // Activate spawn immunity for 5 seconds
         hasSpawnImmunity = true;
         
         // Show immunity indicator
@@ -1851,15 +1851,15 @@ var createScene = function () {
             immunityIndicator.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%, -60px); background:rgba(0,255,255,0.3); border:2px solid cyan; border-radius:10px; padding:10px 20px; color:white; font-size:18px; font-weight:bold; text-shadow:0 0 10px cyan; z-index:1000; pointer-events:none;';
             document.body.appendChild(immunityIndicator);
         }
-        immunityIndicator.innerHTML = '🛡️ SPAWN IMMUNITY (3s)';
+        immunityIndicator.innerHTML = `🛡️ SPAWN IMMUNITY (${SPAWN_IMMUNITY_DURATION / 1000}s)`;
         immunityIndicator.style.display = 'block';
         
         // Countdown display
-        let timeLeft = 3;
+        let timeLeft = SPAWN_IMMUNITY_DURATION / 1000;
         const countdownInterval = setInterval(() => {
             timeLeft--;
             if (hasSpawnImmunity && timeLeft > 0) {
-                immunityIndicator.innerHTML = '🛡️ SPAWN IMMUNITY (' + timeLeft + 's)';
+                immunityIndicator.innerHTML = `🛡️ SPAWN IMMUNITY (${timeLeft}s)`;
             } else {
                 clearInterval(countdownInterval);
             }
@@ -1870,7 +1870,7 @@ var createScene = function () {
             clearTimeout(spawnImmunityTimer);
         }
         
-        // Set timer to remove immunity after 3 seconds
+        // Set timer to remove immunity after 5 seconds
         spawnImmunityTimer = setTimeout(() => {
             hasSpawnImmunity = false;
             spawnImmunityTimer = null;
@@ -1878,7 +1878,7 @@ var createScene = function () {
             console.log('Spawn immunity expired');
         }, SPAWN_IMMUNITY_DURATION);
         
-        console.log('Spawn immunity activated for 3 seconds');
+        console.log(`Spawn immunity activated for ${SPAWN_IMMUNITY_DURATION / 1000} seconds`);
     }
     
     // Fire ultimate ability
