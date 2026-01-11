@@ -557,6 +557,137 @@ const SPAWN_POSITION = new BABYLON.Vector3(0, 3, 0);
 let hasSpawnImmunity = false;
 let spawnImmunityTimer = null;
 const SPAWN_IMMUNITY_DURATION = 5000; // 5 seconds of immunity
+let shieldBubbleMesh = null; // Shield bubble 3D model mesh
+
+// Function to create and show shield bubble around player
+function showShieldBubble() {
+    if (shieldBubbleMesh) {
+        shieldBubbleMesh.setEnabled(true);
+        return;
+    }
+    
+    // Load shield bubble 3D model
+    loadCachedMesh('shieldBubble', scene, function(meshes) {
+        if (meshes.length > 0 && playerPhysicsBody && !playerPhysicsBody.isDisposed()) {
+            const shieldModel = new BABYLON.TransformNode("shieldBubbleModel", scene);
+            
+            meshes.forEach(mesh => {
+                mesh.parent = shieldModel;
+                mesh.isPickable = false;
+                // Make sure the mesh doesn't affect physics
+                if (mesh.physicsImpostor) {
+                    mesh.physicsImpostor.dispose();
+                }
+            });
+            
+            shieldModel.parent = playerPhysicsBody;
+            shieldModel.position = new BABYLON.Vector3(0, 0, 0);
+            shieldModel.scaling = new BABYLON.Vector3(0.05, 0.05, 0.05); // Adjust scale as needed
+            shieldBubbleMesh = shieldModel;
+        }
+    }, function(scene, message, exception) {
+        console.error("Failed to load shield bubble model:", message, exception);
+        // Fallback: create a simple transparent sphere
+        const fallbackShield = BABYLON.MeshBuilder.CreateSphere("shieldBubbleFallback", {diameter: 2.5, segments: 16}, scene);
+        const shieldMat = new BABYLON.StandardMaterial("shieldMat", scene);
+        shieldMat.diffuseColor = new BABYLON.Color3(0, 1, 1);
+        shieldMat.emissiveColor = new BABYLON.Color3(0, 0.5, 0.5);
+        shieldMat.alpha = 0.3;
+        shieldMat.backFaceCulling = false;
+        fallbackShield.material = shieldMat;
+        fallbackShield.parent = playerPhysicsBody;
+        fallbackShield.position = new BABYLON.Vector3(0, 0, 0);
+        fallbackShield.isPickable = false;
+        shieldBubbleMesh = fallbackShield;
+    });
+}
+
+// Function to hide shield bubble
+function hideShieldBubble() {
+    if (shieldBubbleMesh) {
+        shieldBubbleMesh.setEnabled(false);
+    }
+}
+
+// Function to show shield bubble on another player
+function showOtherPlayerShieldBubble(playerId) {
+    const playerData = otherPlayers[playerId];
+    if (!playerData || !playerData.collider) return;
+    
+    // Clear any existing shield timer
+    if (playerData.shieldBubbleTimer) {
+        clearTimeout(playerData.shieldBubbleTimer);
+        playerData.shieldBubbleTimer = null;
+    }
+    
+    // Dispose existing shield if any
+    if (playerData.shieldBubbleMesh) {
+        playerData.shieldBubbleMesh.dispose();
+        playerData.shieldBubbleMesh = null;
+    }
+    
+    // Load shield bubble 3D model
+    loadCachedMesh('shieldBubble', scene, function(meshes) {
+        if (meshes.length > 0 && playerData.collider && !playerData.collider.isDisposed()) {
+            const shieldModel = new BABYLON.TransformNode("otherShieldBubbleModel_" + playerId, scene);
+            
+            meshes.forEach(mesh => {
+                mesh.parent = shieldModel;
+                mesh.isPickable = false;
+                // Make sure the mesh doesn't affect physics
+                if (mesh.physicsImpostor) {
+                    mesh.physicsImpostor.dispose();
+                }
+            });
+            
+            shieldModel.parent = playerData.collider;
+            shieldModel.position = new BABYLON.Vector3(0, 0, 0);
+            shieldModel.scaling = new BABYLON.Vector3(0.05, 0.05, 0.05);
+            playerData.shieldBubbleMesh = shieldModel;
+        }
+    }, function(scene, message, exception) {
+        console.error("Failed to load other player shield bubble model:", message, exception);
+        // Fallback: create a simple transparent sphere
+        if (playerData.collider && !playerData.collider.isDisposed()) {
+            const fallbackShield = BABYLON.MeshBuilder.CreateSphere("otherShieldBubbleFallback_" + playerId, {diameter: 2.5, segments: 16}, scene);
+            const shieldMat = new BABYLON.StandardMaterial("otherShieldMat_" + playerId, scene);
+            shieldMat.diffuseColor = new BABYLON.Color3(0, 1, 1);
+            shieldMat.emissiveColor = new BABYLON.Color3(0, 0.5, 0.5);
+            shieldMat.alpha = 0.3;
+            shieldMat.backFaceCulling = false;
+            fallbackShield.material = shieldMat;
+            fallbackShield.parent = playerData.collider;
+            fallbackShield.position = new BABYLON.Vector3(0, 0, 0);
+            fallbackShield.isPickable = false;
+            playerData.shieldBubbleMesh = fallbackShield;
+        }
+    });
+    
+    // Set timer to remove shield after immunity duration
+    playerData.shieldBubbleTimer = setTimeout(() => {
+        if (playerData.shieldBubbleMesh) {
+            playerData.shieldBubbleMesh.dispose();
+            playerData.shieldBubbleMesh = null;
+        }
+        playerData.shieldBubbleTimer = null;
+    }, SPAWN_IMMUNITY_DURATION);
+}
+
+// Function to hide shield bubble on another player
+function hideOtherPlayerShieldBubble(playerId) {
+    const playerData = otherPlayers[playerId];
+    if (!playerData) return;
+    
+    if (playerData.shieldBubbleTimer) {
+        clearTimeout(playerData.shieldBubbleTimer);
+        playerData.shieldBubbleTimer = null;
+    }
+    
+    if (playerData.shieldBubbleMesh) {
+        playerData.shieldBubbleMesh.dispose();
+        playerData.shieldBubbleMesh = null;
+    }
+}
 
 // Function to break spawn immunity (called when player attacks)
 function breakSpawnImmunity() {
@@ -571,6 +702,8 @@ function breakSpawnImmunity() {
         if (immunityIndicator) {
             immunityIndicator.style.display = 'none';
         }
+        // Hide the shield bubble
+        hideShieldBubble();
         console.log('Spawn immunity broken - player attacked!');
     }
 }
@@ -629,6 +762,7 @@ const KATANA_MODEL_URL = "https://files.catbox.moe/nlqntj.glb";
 const DRONE_BOMB_MODEL_URL = "https://files.catbox.moe/qeyyrr.glb";
 const GRENADE_MODEL_URL = "https://files.catbox.moe/nmw7yv.glb";
 const MINE_MODEL_URL = "https://files.catbox.moe/qmnt2u.glb";
+const SHIELD_BUBBLE_MODEL_URL = "https://files.catbox.moe/i5d8fc.glb"; // TODO: Replace with actual shield bubble model
 
 // ============ ASSET CACHE SYSTEM (IndexedDB) ============
 // Caches 3D models locally so they don't need to be re-downloaded each visit
@@ -645,7 +779,8 @@ const MODELS_TO_CACHE = [
     { name: 'katana', url: KATANA_MODEL_URL },
     { name: 'droneBomb', url: DRONE_BOMB_MODEL_URL },
     { name: 'grenade', url: GRENADE_MODEL_URL },
-    { name: 'mine', url: MINE_MODEL_URL }
+    { name: 'mine', url: MINE_MODEL_URL },
+    { name: 'shieldBubble', url: SHIELD_BUBBLE_MODEL_URL }
 ];
 
 // Cached blob URLs for instant loading
@@ -982,6 +1117,8 @@ function cleanupOtherPlayerResources(playerData) {
     if (playerData.droneChargingBall) playerData.droneChargingBall.dispose();
     if (playerData.grappleHook) playerData.grappleHook.dispose();
     if (playerData.grappleLine) playerData.grappleLine.dispose();
+    if (playerData.shieldBubbleMesh) playerData.shieldBubbleMesh.dispose();
+    if (playerData.shieldBubbleTimer) clearTimeout(playerData.shieldBubbleTimer);
     if (playerData.droneMesh) {
         if (playerData.droneMesh.droneModel) {
             playerData.droneMesh.droneModel.getChildMeshes().forEach(mesh => mesh.dispose());
@@ -1843,6 +1980,9 @@ var createScene = function () {
         // Activate spawn immunity for 5 seconds
         hasSpawnImmunity = true;
         
+        // Show shield bubble 3D model around player
+        showShieldBubble();
+        
         // Show immunity indicator
         let immunityIndicator = document.getElementById('spawnImmunityIndicator');
         if (!immunityIndicator) {
@@ -1875,6 +2015,8 @@ var createScene = function () {
             hasSpawnImmunity = false;
             spawnImmunityTimer = null;
             immunityIndicator.style.display = 'none';
+            // Hide shield bubble
+            hideShieldBubble();
             console.log('Spawn immunity expired');
         }, SPAWN_IMMUNITY_DURATION);
         
@@ -2936,6 +3078,8 @@ function addOtherPlayer(playerInfo) {
         batMesh: otherBat,  // Store the bat mesh for this player
         chargingBall: null,  // For showing their charging ultimate
         grenadeChargingBall: null,  // For showing their charging grenade
+        shieldBubbleMesh: null,  // For showing their spawn immunity shield
+        shieldBubbleTimer: null,  // Timer to remove shield after immunity duration
         lastAnimState: 'idle',
         username: playerInfo.username || "Player", // Store username here for easy access
         // Position and velocity for smooth interpolation
@@ -3343,6 +3487,9 @@ socket.on('youDied', (data) => {
 socket.on('playerRespawned', (playerId) => {
     if (otherPlayers[playerId]) {
         setPlayerMeshVisibility(otherPlayers[playerId].mesh, true);
+        
+        // Show shield bubble for the respawned player
+        showOtherPlayerShieldBubble(playerId);
     }
 });
 
@@ -4134,10 +4281,15 @@ socket.on('mineTriggered', (data) => {
     
     // If we're the one who got boosted
     if (data.targetPlayerId === socket.id && playerPhysicsBody && playerPhysicsBody.physicsImpostor) {
-        playerPhysicsBody.physicsImpostor.applyImpulse(
-            new BABYLON.Vector3(0, MINE_BOOST_FORCE, 0),
-            playerPhysicsBody.getAbsolutePosition()
-        );
+        // Check for spawn immunity - no knockback when immune
+        if (!hasSpawnImmunity) {
+            playerPhysicsBody.physicsImpostor.applyImpulse(
+                new BABYLON.Vector3(0, MINE_BOOST_FORCE, 0),
+                playerPhysicsBody.getAbsolutePosition()
+            );
+        } else {
+            console.log('MINE BOOST BLOCKED BY SPAWN IMMUNITY!');
+        }
     }
 });
 
