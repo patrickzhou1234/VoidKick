@@ -763,6 +763,7 @@ const DRONE_BOMB_MODEL_URL = "https://files.catbox.moe/qeyyrr.glb";
 const GRENADE_MODEL_URL = "https://files.catbox.moe/nmw7yv.glb";
 const MINE_MODEL_URL = "https://files.catbox.moe/qmnt2u.glb";
 const SHIELD_BUBBLE_MODEL_URL = "https://files.catbox.moe/i5d8fc.glb"; // TODO: Replace with actual shield bubble model
+const KNOCKBACK_EXPLOSION_MODEL_URL = "https://files.catbox.moe/zcgdbt.glb"; // TODO: Replace with actual explosion model
 
 // ============ ASSET CACHE SYSTEM (IndexedDB) ============
 // Caches 3D models locally so they don't need to be re-downloaded each visit
@@ -780,7 +781,8 @@ const MODELS_TO_CACHE = [
     { name: 'droneBomb', url: DRONE_BOMB_MODEL_URL },
     { name: 'grenade', url: GRENADE_MODEL_URL },
     { name: 'mine', url: MINE_MODEL_URL },
-    { name: 'shieldBubble', url: SHIELD_BUBBLE_MODEL_URL }
+    { name: 'shieldBubble', url: SHIELD_BUBBLE_MODEL_URL },
+    { name: 'knockbackExplosion', url: KNOCKBACK_EXPLOSION_MODEL_URL }
 ];
 
 // Cached blob URLs for instant loading
@@ -952,6 +954,35 @@ function resetOtherPlayerArms(mesh) {
         mesh.leftArm.rotation.z = Math.PI / 6;
         mesh.rightArm.rotation.z = -Math.PI / 6;
     }
+}
+
+// Spawn knockback explosion effect at a position (no physics)
+function spawnKnockbackExplosion(position) {
+    loadCachedMesh('knockbackExplosion', scene, function(meshes) {
+        if (meshes.length > 0) {
+            const explosionRoot = new BABYLON.TransformNode("knockbackExplosionRoot", scene);
+            explosionRoot.position = position.clone();
+            
+            meshes.forEach(mesh => {
+                mesh.setEnabled(false);
+                mesh.parent = explosionRoot;
+                mesh.isPickable = false;
+                // No physics impostor - purely visual
+                mesh.setEnabled(true);
+            });
+            
+            explosionRoot.scaling = new BABYLON.Vector3(0.2, 0.2, 0.2); // Adjust scale as needed
+            
+            // Remove the explosion effect after a short time
+            setTimeout(() => {
+                if (explosionRoot && !explosionRoot.isDisposed()) {
+                    explosionRoot.dispose();
+                }
+            }, 2000); // 0.5 seconds display time
+        }
+    }, function(scene, message, exception) {
+        console.error("Failed to load knockback explosion model:", message, exception);
+    });
 }
 
 // Clear all room state (when switching rooms)
@@ -2230,6 +2261,9 @@ var createScene = function () {
                     // Apply knockback
                     const direction = otherPlayer.collider.position.subtract(batWorldPos).normalize();
                     if (otherPlayer.collider.physicsImpostor) {
+                        // Spawn explosion effect at point of contact
+                        spawnKnockbackExplosion(otherPlayer.collider.position);
+                        
                         otherPlayer.collider.physicsImpostor.applyImpulse(
                             direction.scale(BAT_KNOCKBACK_FORCE),
                             otherPlayer.collider.getAbsolutePosition()
@@ -2245,6 +2279,10 @@ var createScene = function () {
                 const distance = BABYLON.Vector3.Distance(batWorldPos, block.position);
                 if (distance < BAT_RANGE + 1.0) {
                     const direction = block.position.subtract(batWorldPos).normalize();
+                    
+                    // Spawn explosion effect at point of contact
+                    spawnKnockbackExplosion(block.position);
+                    
                     block.physicsImpostor.applyImpulse(
                         direction.scale(BAT_KNOCKBACK_FORCE * 2),
                         block.getAbsolutePosition()
@@ -3772,6 +3810,10 @@ socket.on('batSwung', (batData) => {
         if (distance < 5.0) { // Extended range for long bat + network latency
             const knockbackDir = playerPhysicsBody.position.subtract(batPos).normalize();
             knockbackDir.y += 0.3; // Add some upward force
+            
+            // Spawn explosion effect at our position (victim sees it too)
+            spawnKnockbackExplosion(playerPhysicsBody.position.clone());
+            
             playerPhysicsBody.physicsImpostor.applyImpulse(
                 knockbackDir.scale(BAT_KNOCKBACK_FORCE),
                 playerPhysicsBody.getAbsolutePosition()
