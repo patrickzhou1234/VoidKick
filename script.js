@@ -929,6 +929,12 @@ const SKIN_CONFIGS = {
         rotation: [0, -Math.PI/2, 0],
         scaling: [0.1, 0.1, 0.1],
         offset: [0, 0, 0]
+    },
+    'peter griffin': {
+        url: 'https://files.catbox.moe/fszlyv.glb', // Placeholder URL
+        rotation: [0, 0, 0],
+        scaling: [1, 1, 1],
+        offset: [0, 0, 0]
     }
 };
 
@@ -943,7 +949,8 @@ const AVAILABLE_SKINS = [
     { id: 'patrick', name: 'Patrick', icon: '👨‍🦱' },
     { id: 'beavis', name: 'Beavis', icon: '👨‍🦳' },
     { id: 'homer', name: 'Homer', icon: '👴' },
-    { id: 'patrick simpson', name: 'Patrick Simpson', icon: '🍩' }
+    { id: 'patrick simpson', name: 'Patrick Simpson', icon: '🍩' },
+    { id: 'peter griffin', name: 'Peter Griffin', icon: '🍔' }
 ];
 
 // Currently selected skin
