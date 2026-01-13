@@ -724,6 +724,7 @@ const SPAWN_POSITION = new BABYLON.Vector3(0, 3, 0);
 
 // Killstreak tracking
 let killstreak = 0;
+let killstreakHideTimeout = null;
 
 // Function to update killstreak display
 function updateKillstreakDisplay() {
@@ -734,14 +735,39 @@ function updateKillstreakDisplay() {
         if (killstreak > 0) {
             killstreakCount.textContent = killstreak;
             killstreakDisplay.style.display = 'block';
+            killstreakDisplay.style.opacity = '1';
+            killstreakDisplay.style.transition = 'opacity 0.5s ease-out';
             
             // Add animation effect for new killstreak milestones
             killstreakDisplay.style.animation = 'none';
             setTimeout(() => {
                 killstreakDisplay.style.animation = 'killstreakPulse 0.3s ease-out';
             }, 10);
+            
+            // Clear any existing hide timeout
+            if (killstreakHideTimeout) {
+                clearTimeout(killstreakHideTimeout);
+            }
+            
+            // Auto-hide after 3 seconds with fade out animation
+            killstreakHideTimeout = setTimeout(() => {
+                killstreakDisplay.style.opacity = '0';
+                // Hide display after fade completes
+                setTimeout(() => {
+                    if (killstreakDisplay.style.opacity === '0') {
+                        killstreakDisplay.style.display = 'none';
+                    }
+                }, 500);
+            }, 3000);
         } else {
-            killstreakDisplay.style.display = 'none';
+            // Clear timeout when killstreak resets
+            if (killstreakHideTimeout) {
+                clearTimeout(killstreakHideTimeout);
+            }
+            killstreakDisplay.style.opacity = '0';
+            setTimeout(() => {
+                killstreakDisplay.style.display = 'none';
+            }, 500);
         }
     }
 }
@@ -4275,6 +4301,25 @@ document.getElementById('chatInput').addEventListener('blur', function() {
     document.getElementById('chatInputContainer').style.opacity = '0';
     if (document.getElementById('chatMessages').children.length === 0) {
         document.getElementById('chatWrapper').style.display = 'none';
+    }
+});
+
+// Chat minimize button handler
+let chatMinimized = false;
+document.getElementById('chatMinimizeBtn').addEventListener('click', function() {
+    const chatMessagesContainer = document.getElementById('chatMessagesContainer');
+    const chatMinimizeBtn = document.getElementById('chatMinimizeBtn');
+    
+    chatMinimized = !chatMinimized;
+    
+    if (chatMinimized) {
+        chatMessagesContainer.style.maxHeight = '0';
+        chatMessagesContainer.style.opacity = '0';
+        chatMinimizeBtn.textContent = '▲';
+    } else {
+        chatMessagesContainer.style.maxHeight = '300px';
+        chatMessagesContainer.style.opacity = '1';
+        chatMinimizeBtn.textContent = '▼';
     }
 });
 

@@ -325,3 +325,9 @@ body {
   50% { transform: scale(1.1); }
   100% { transform: scale(1); }
 }
+
+/* Chat minimize button */
+#chatMinimizeBtn:hover {
+  background: rgba(74, 144, 217, 0.6) !important;
+  border-color: rgba(74, 144, 217, 0.8) !important;
+}
