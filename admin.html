@@ -558,7 +558,8 @@
                         <select id="roomMap">
                             <option value="default">🏟️ Default Arena</option>
                             <option value="tokyo">🏯 Little Tokyo</option>
-                            <option value="plaza">🏖️ Plaza</option>
+                            <option value="plaza">🏖️ Sunny Plaza</option>
+                            <option value="forest">🌲 Forest</option>
                         </select>
                     </div>
                     <div class="form-group" style="display:flex; align-items:center; gap:10px; padding-top:25px;">
@@ -819,7 +820,9 @@
         // Map display names
         const mapNames = {
             'default': '🏟️ Default',
-            'tokyo': '🏯 Tokyo'
+            'tokyo': '🏯 Tokyo',
+            'plaza': '🏖️ Sunny Plaza',
+            'forest': '🌲 Forest'
         };
         
         function renderRooms(rooms) {
@@ -938,7 +941,9 @@
         function changeMap(roomId) {
             const mapOptions = {
                 'default': '🏟️ Default Arena',
-                'tokyo': '🏯 Little Tokyo'
+                'tokyo': '🏯 Little Tokyo',
+                'plaza': '🏖️ Sunny Plaza',
+                'forest': '🌲 Forest'
             };
             
             Swal.fire({

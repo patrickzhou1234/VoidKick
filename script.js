@@ -550,7 +550,8 @@ function renderRoomsList() {
     const mapNames = {
         'default': '🏟️ Default Arena',
         'tokyo': '🏯 Little Tokyo',
-        'plaza': '🏖️ Sunny Plaza'
+        'plaza': '🏖️ Sunny Plaza',
+        'forest': '🌲 Enchanted Forest'
     };
     
     roomsList.innerHTML = availableRooms.map(room => {
@@ -930,7 +931,7 @@ const DRONE_BOMB_MODEL_URL = "https://files.catbox.moe/qeyyrr.glb";
 const GRENADE_MODEL_URL = "https://files.catbox.moe/nmw7yv.glb";
 const MINE_MODEL_URL = "https://files.catbox.moe/qmnt2u.glb";
 const SHIELD_BUBBLE_MODEL_URL = "https://files.catbox.moe/i5d8fc.glb"; // TODO: Replace with actual shield bubble model
-const KNOCKBACK_EXPLOSION_MODEL_URL = "https://files.catbox.moe/zcgdbt.glb"; // TODO: Replace with actual explosion model
+const KNOCKBACK_EXPLOSION_MODEL_URL = "https://dl.dropboxusercontent.com/scl/fi/3bfqc1g8l59zd83axg3kk/flame__test.glb?rlkey=1i9jbvz516f1poghtj0w4h08t&st=s7qz0834&dl=1";
 
 // ============ MAP SYSTEM ============
 // Map configurations - .babylon files for custom arenas
@@ -963,6 +964,16 @@ const MAP_CONFIGS = {
         scaling: [0.005, 0.005, 0.005],
         offset: [50, 0, 0],
         rotation: [-Math.PI/2, -Math.PI/2, 0],
+        spawnY: 5,
+        groundY: -5
+    },
+    'forest': {
+        url: 'https://files.catbox.moe/73gps9.babylon',
+        name: 'Forest',
+        icon: '🌲',
+        scaling: [0.1, 0.1, 0.1],
+        offset: [1000, 0, 0],
+        rotation: [0, 0, 0],
         spawnY: 5,
         groundY: -5
     }
@@ -1463,7 +1474,7 @@ function spawnKnockbackExplosion(position) {
                 mesh.setEnabled(true);
             });
             
-            explosionRoot.scaling = new BABYLON.Vector3(0.2, 0.2, 0.2); // Adjust scale as needed
+            explosionRoot.scaling = new BABYLON.Vector3(1, 1, 1); // Adjust scale as needed
             
             // Remove the explosion effect after a short time
             setTimeout(() => {
