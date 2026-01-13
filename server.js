@@ -466,7 +466,7 @@ const rooms = [];
 const adminSockets = new Set();
 
 // Available maps for rooms
-const AVAILABLE_MAPS = ['default', 'complex', 'tokyo', 'plaza', 'forest'];
+const AVAILABLE_MAPS = ['default', 'complex', 'urban', 'tokyo', 'plaza', 'forest'];
 
 // Create default room
 rooms.push({

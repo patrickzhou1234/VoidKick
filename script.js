@@ -552,7 +552,8 @@ function renderRoomsList() {
         'tokyo': '🏯 Little Tokyo',
         'plaza': '🏖️ Sunny Plaza',
         'forest': '🌲 Enchanted Forest',
-        'complex': '🏗️ Complex Arena'
+        'complex': '🏗️ Complex Arena',
+        'urban': '🏙️ Urban District'
     };
     
     roomsList.innerHTML = availableRooms.map(room => {
@@ -988,6 +989,17 @@ const MAP_CONFIGS = {
         spawnY: 8, // Spawn on top of central tower
         groundY: 0,
         isPrimitive: true // Flag to indicate this uses primitives
+    },
+    'urban': {
+        url: null, // Uses primitive-based map
+        name: 'Urban District',
+        icon: '🏙️',
+        scaling: [1, 1, 1],
+        offset: [0, 0, 0],
+        rotation: [0, 0, 0],
+        spawnY: 3,
+        groundY: 0,
+        isPrimitive: true
     }
 };
 
@@ -1271,6 +1283,10 @@ function loadMap(mapId, targetScene) {
     if (window.destroyComplexMap) {
         window.destroyComplexMap();
     }
+    // Always destroy urban map elements when switching maps
+    if (window.destroyUrbanMap) {
+        window.destroyUrbanMap();
+    }
     
     // Handle default arena (plain ground + walls)
     if (mapId === 'default') {
@@ -1332,6 +1348,40 @@ function loadMap(mapId, targetScene) {
         }
         currentMapId = 'complex';
         console.log('Complex arena loaded with primitives');
+        return;
+    }
+    
+    // Handle urban primitive map
+    if (mapId === 'urban' && mapConfig.isPrimitive) {
+        // Show default ground and walls (urban map uses the same base)
+        if (window.arenaGround) {
+            window.arenaGround.setEnabled(true);
+            if (!window.arenaGround.physicsImpostor || window.arenaGround.physicsImpostor.isDisposed) {
+                window.arenaGround.physicsImpostor = new BABYLON.PhysicsImpostor(
+                    window.arenaGround, BABYLON.PhysicsImpostor.MeshImpostor, 
+                    {mass: 0, restitution: 0.3}, targetScene
+                );
+            }
+        }
+        if (window.arenaWalls) {
+            window.arenaWalls.forEach(wall => {
+                if (!isHardcoreMode) {
+                    wall.setEnabled(true);
+                    if (!wall.physicsImpostor || wall.physicsImpostor.isDisposed) {
+                        wall.physicsImpostor = new BABYLON.PhysicsImpostor(
+                            wall, BABYLON.PhysicsImpostor.BoxImpostor, 
+                            {mass: 0, restitution: 0.9}, targetScene
+                        );
+                    }
+                }
+            });
+        }
+        // Create the urban map elements
+        if (window.createUrbanMap) {
+            window.createUrbanMap(targetScene);
+        }
+        currentMapId = 'urban';
+        console.log('Urban district loaded with primitives');
         return;
     }
     
@@ -2263,6 +2313,228 @@ var createScene = function () {
     };
     
     // ========== END OF COMPLEX MAP DEFINITION ==========
+
+    // ========== URBAN MAP WITH BUILDINGS ==========
+    window.urbanMapElements = [];
+    
+    window.createUrbanMap = function(targetScene) {
+        // Clean up existing urban map elements
+        if (window.urbanMapElements) {
+            window.urbanMapElements.forEach(mesh => {
+                if (mesh && !mesh.isDisposed()) {
+                    if (mesh.physicsImpostor) mesh.physicsImpostor.dispose();
+                    mesh.dispose();
+                }
+            });
+        }
+        window.urbanMapElements = [];
+        
+        // Materials
+        var concreteMat = new BABYLON.StandardMaterial("concreteMat", targetScene);
+        concreteMat.diffuseColor = new BABYLON.Color3(0.6, 0.6, 0.6);
+        concreteMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        
+        var brickMat = new BABYLON.StandardMaterial("brickMat", targetScene);
+        brickMat.diffuseColor = new BABYLON.Color3(0.7, 0.4, 0.3);
+        brickMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        
+        var darkBrickMat = new BABYLON.StandardMaterial("darkBrickMat", targetScene);
+        darkBrickMat.diffuseColor = new BABYLON.Color3(0.5, 0.3, 0.25);
+        darkBrickMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        
+        var windowMat = new BABYLON.StandardMaterial("windowMat", targetScene);
+        windowMat.diffuseColor = new BABYLON.Color3(0.3, 0.5, 0.7);
+        windowMat.specularColor = new BABYLON.Color3(0.8, 0.8, 0.8);
+        windowMat.alpha = 0.6;
+        windowMat.emissiveColor = new BABYLON.Color3(0.1, 0.15, 0.2);
+        
+        var roofMat = new BABYLON.StandardMaterial("roofMat", targetScene);
+        roofMat.diffuseColor = new BABYLON.Color3(0.3, 0.3, 0.35);
+        roofMat.specularColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+        
+        var floorMat = new BABYLON.StandardMaterial("floorMat", targetScene);
+        floorMat.diffuseColor = new BABYLON.Color3(0.45, 0.4, 0.35);
+        floorMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        
+        var doorMat = new BABYLON.StandardMaterial("doorMat", targetScene);
+        doorMat.diffuseColor = new BABYLON.Color3(0.4, 0.25, 0.15);
+        doorMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        
+        var metalRailMat = new BABYLON.StandardMaterial("metalRailMat", targetScene);
+        metalRailMat.diffuseColor = new BABYLON.Color3(0.4, 0.4, 0.45);
+        metalRailMat.specularColor = new BABYLON.Color3(0.6, 0.6, 0.6);
+        
+        var accentMat = new BABYLON.StandardMaterial("accentMat", targetScene);
+        accentMat.diffuseColor = new BABYLON.Color3(0.8, 0.6, 0.2);
+        accentMat.emissiveColor = new BABYLON.Color3(0.2, 0.15, 0.05);
+        
+        // Helper functions
+        function createBox(name, w, h, d, x, y, z, mat, rotY = 0) {
+            var box = BABYLON.MeshBuilder.CreateBox(name, {width: w, height: h, depth: d}, targetScene);
+            box.position.set(x, y, z);
+            box.rotation.y = rotY;
+            box.material = mat;
+            box.physicsImpostor = new BABYLON.PhysicsImpostor(box, BABYLON.PhysicsImpostor.BoxImpostor, {mass: 0, restitution: 0.3, friction: 0.5}, targetScene);
+            window.urbanMapElements.push(box);
+            return box;
+        }
+        
+        function createCylinder(name, diam, h, x, y, z, mat) {
+            var cyl = BABYLON.MeshBuilder.CreateCylinder(name, {diameter: diam, height: h, tessellation: 16}, targetScene);
+            cyl.position.set(x, y, z);
+            cyl.material = mat;
+            cyl.physicsImpostor = new BABYLON.PhysicsImpostor(cyl, BABYLON.PhysicsImpostor.CylinderImpostor, {mass: 0, restitution: 0.3, friction: 0.5}, targetScene);
+            window.urbanMapElements.push(cyl);
+            return cyl;
+        }
+        
+        // ===== BUILDING 1: Northwest - Two-story building with rooms =====
+        // Ground floor walls
+        createBox("b1_wall_n", 10, 3, 0.3, -9, 1.5, 6.85, brickMat);
+        createBox("b1_wall_s", 10, 3, 0.3, -9, 1.5, -1.15, brickMat);
+        createBox("b1_wall_w", 0.3, 3, 8, -13.85, 1.5, 2.85, brickMat);
+        createBox("b1_wall_e1", 0.3, 3, 2.5, -4.15, 1.5, 5.6, brickMat); // East wall with door gap
+        createBox("b1_wall_e2", 0.3, 3, 2.5, -4.15, 1.5, 0.1, brickMat);
+        // Ground floor
+        createBox("b1_floor1", 10, 0.3, 8, -9, 0.15, 2.85, floorMat);
+        // First floor (ceiling of ground, floor of second)
+        createBox("b1_floor2", 10, 0.3, 8, -9, 3.15, 2.85, floorMat);
+        // Second floor walls
+        createBox("b1_wall2_n", 10, 3, 0.3, -9, 4.65, 6.85, darkBrickMat);
+        createBox("b1_wall2_s", 10, 3, 0.3, -9, 4.65, -1.15, darkBrickMat);
+        createBox("b1_wall2_w", 0.3, 3, 8, -13.85, 4.65, 2.85, darkBrickMat);
+        createBox("b1_wall2_e", 0.3, 3, 8, -4.15, 4.65, 2.85, darkBrickMat);
+        // Roof
+        createBox("b1_roof", 10.6, 0.4, 8.6, -9, 6.35, 2.85, roofMat);
+        // Interior wall dividing ground floor into 2 rooms
+        createBox("b1_interior1", 0.2, 3, 3.5, -9, 1.5, 5.1, concreteMat);
+        // Window on north wall
+        createBox("b1_window1", 2, 1.5, 0.1, -9, 2, 6.9, windowMat);
+        // Stairs inside (to second floor)
+        for (let i = 0; i < 6; i++) {
+            createBox("b1_stair" + i, 2, 0.25, 0.8, -12.5, 0.4 + i * 0.5, 1 + i * 0.8, concreteMat);
+        }
+        
+        // ===== BUILDING 2: Northeast - Small shop with open front =====
+        createBox("b2_wall_n", 6, 3, 0.3, 9, 1.5, 11.85, brickMat);
+        createBox("b2_wall_e", 0.3, 3, 5, 11.85, 1.5, 9.35, brickMat);
+        createBox("b2_wall_w", 0.3, 3, 5, 6.15, 1.5, 9.35, brickMat);
+        // Open front (south) - just pillars
+        createCylinder("b2_pillar1", 0.5, 3, 6.4, 1.5, 6.85, concreteMat);
+        createCylinder("b2_pillar2", 0.5, 3, 11.6, 1.5, 6.85, concreteMat);
+        createBox("b2_floor", 6, 0.3, 5, 9, 0.15, 9.35, floorMat);
+        createBox("b2_roof", 6.6, 0.3, 5.6, 9, 3.15, 9.35, roofMat);
+        // Counter inside
+        createBox("b2_counter", 4, 1, 0.6, 9, 0.5, 10.5, accentMat);
+        
+        // ===== BUILDING 3: Southeast - L-shaped building =====
+        // Main section
+        createBox("b3_wall_s", 8, 4, 0.3, 10, 2, -13.85, darkBrickMat);
+        createBox("b3_wall_e", 0.3, 4, 6, 13.85, 2, -10.85, darkBrickMat);
+        createBox("b3_wall_n1", 4, 4, 0.3, 12, 2, -7.85, darkBrickMat);
+        createBox("b3_wall_w1", 0.3, 4, 3, 10.15, 2, -9.35, darkBrickMat);
+        // L extension
+        createBox("b3_wall_w2", 0.3, 4, 3, 6.15, 2, -12.35, darkBrickMat);
+        createBox("b3_wall_n2", 4, 4, 0.3, 8, 2, -10.85, darkBrickMat);
+        createBox("b3_floor", 8, 0.3, 6, 10, 0.15, -10.85, floorMat);
+        createBox("b3_roof", 8.6, 0.4, 6.6, 10, 4.2, -10.85, roofMat);
+        // Door opening on west side
+        createBox("b3_door_frame_t", 1.8, 0.3, 0.3, 6.15, 3.5, -13, doorMat);
+        // Windows
+        createBox("b3_window1", 2, 1.5, 0.1, 10, 2.5, -13.9, windowMat);
+        createBox("b3_window2", 1.5, 1.5, 0.1, 13.9, 2.5, -11, windowMat);
+        
+        // ===== BUILDING 4: Southwest - Warehouse with large door =====
+        createBox("b4_wall_s", 8, 5, 0.3, -10, 2.5, -13.85, concreteMat);
+        createBox("b4_wall_w", 0.3, 5, 8, -13.85, 2.5, -9.85, concreteMat);
+        createBox("b4_wall_n", 8, 5, 0.3, -10, 2.5, -5.85, concreteMat);
+        // East wall with big door gap
+        createBox("b4_wall_e1", 0.3, 5, 2, -6.15, 2.5, -12.85, concreteMat);
+        createBox("b4_wall_e2", 0.3, 5, 2, -6.15, 2.5, -6.85, concreteMat);
+        createBox("b4_wall_e3", 0.3, 1.5, 4, -6.15, 4.25, -9.85, concreteMat); // Above door
+        createBox("b4_floor", 8, 0.3, 8, -10, 0.15, -9.85, floorMat);
+        createBox("b4_roof", 8.6, 0.4, 8.6, -10, 5.2, -9.85, roofMat);
+        // Crates inside warehouse
+        createBox("b4_crate1", 1.5, 1.5, 1.5, -12, 0.9, -11, accentMat);
+        createBox("b4_crate2", 1.2, 1.2, 1.2, -12, 0.75, -8.5, accentMat);
+        createBox("b4_crate3", 1, 2, 1, -11, 1.15, -7, accentMat);
+        createBox("b4_crate4", 1.5, 1, 1.5, -12, 2.4, -11, accentMat); // Stacked
+        
+        // ===== CENTRAL PLAZA AREA =====
+        // Fountain base
+        createCylinder("fountain_base", 4, 0.5, 0, 0.25, 0, concreteMat);
+        createCylinder("fountain_inner", 3, 0.8, 0, 0.65, 0, windowMat);
+        createCylinder("fountain_pillar", 0.6, 2, 0, 1.5, 0, concreteMat);
+        
+        // Benches around fountain
+        createBox("bench1", 2, 0.5, 0.6, 3, 0.25, 0, accentMat);
+        createBox("bench2", 2, 0.5, 0.6, -3, 0.25, 0, accentMat);
+        createBox("bench3", 0.6, 0.5, 2, 0, 0.25, 3, accentMat);
+        createBox("bench4", 0.6, 0.5, 2, 0, 0.25, -3, accentMat);
+        
+        // ===== CORRIDORS / ALLEYWAYS =====
+        // Alley between building 1 and 4 (west side)
+        createBox("alley_w_floor", 2, 0.1, 5, -14, 0.05, -2.5, floorMat);
+        
+        // Covered walkway on east side
+        createBox("walkway_roof", 2, 0.2, 12, 5, 3, 0, roofMat);
+        createCylinder("walkway_pillar1", 0.4, 3, 5, 1.5, 5, metalRailMat);
+        createCylinder("walkway_pillar2", 0.4, 3, 5, 1.5, 0, metalRailMat);
+        createCylinder("walkway_pillar3", 0.4, 3, 5, 1.5, -5, metalRailMat);
+        
+        // ===== ELEVATED WALKWAY / BRIDGE =====
+        createBox("bridge1", 8, 0.3, 2, 0, 4, 9, metalRailMat);
+        createBox("bridge_rail1", 8, 0.5, 0.1, 0, 4.4, 8.05, metalRailMat);
+        createBox("bridge_rail2", 8, 0.5, 0.1, 0, 4.4, 9.95, metalRailMat);
+        // Bridge supports
+        createCylinder("bridge_sup1", 0.4, 4, -3.5, 2, 9, metalRailMat);
+        createCylinder("bridge_sup2", 0.4, 4, 3.5, 2, 9, metalRailMat);
+        // Stairs up to bridge
+        for (let i = 0; i < 8; i++) {
+            createBox("bridge_stair_l" + i, 1.5, 0.2, 0.6, -4.5 - i * 0.2, 0.3 + i * 0.5, 9, concreteMat);
+        }
+        
+        // ===== ROOFTOP ACCESS BUILDING (small) =====
+        createBox("roof_access_wall1", 3, 2, 0.2, -9, 7.35, 5.7, concreteMat);
+        createBox("roof_access_wall2", 3, 2, 0.2, -9, 7.35, 3.5, concreteMat);
+        createBox("roof_access_wall3", 0.2, 2, 2.4, -10.4, 7.35, 4.6, concreteMat);
+        createBox("roof_access_roof", 3.4, 0.2, 2.8, -9, 8.45, 4.6, roofMat);
+        // Ladder to roof access
+        createBox("ladder1", 0.1, 2, 0.3, -7.7, 7.35, 4.6, metalRailMat);
+        createBox("ladder2", 0.1, 2, 0.3, -7.5, 7.35, 4.6, metalRailMat);
+        
+        // ===== STREET LAMPS =====
+        createCylinder("lamp1_pole", 0.15, 4, 5, 2, 5, metalRailMat);
+        createBox("lamp1_light", 0.6, 0.3, 0.6, 5, 4.15, 5, accentMat);
+        createCylinder("lamp2_pole", 0.15, 4, -5, 2, -5, metalRailMat);
+        createBox("lamp2_light", 0.6, 0.3, 0.6, -5, 4.15, -5, accentMat);
+        
+        // ===== BARRIER WALLS / LOW WALLS =====
+        createBox("barrier1", 4, 0.8, 0.3, 2, 0.4, -6, concreteMat);
+        createBox("barrier2", 4, 0.8, 0.3, -2, 0.4, 6, concreteMat);
+        createBox("barrier3", 0.3, 0.8, 3, 6, 0.4, -3, concreteMat);
+        
+        // ===== DUMPSTERS =====
+        createBox("dumpster1", 2, 1.2, 1, -5.5, 0.6, -4, darkBrickMat);
+        createBox("dumpster2", 2, 1.2, 1, 4, 0.6, 11.5, darkBrickMat);
+        
+        console.log('Urban map created with', window.urbanMapElements.length, 'elements');
+    };
+    
+    // Function to destroy urban map elements
+    window.destroyUrbanMap = function() {
+        if (window.urbanMapElements) {
+            window.urbanMapElements.forEach(mesh => {
+                if (mesh && !mesh.isDisposed()) {
+                    if (mesh.physicsImpostor) mesh.physicsImpostor.dispose();
+                    mesh.dispose();
+                }
+            });
+            window.urbanMapElements = [];
+        }
+    };
+    
+    // ========== END OF URBAN MAP DEFINITION ==========
 
     // Skybox gradient
     var bluemat = new BABYLON.StandardMaterial("bluemat", scene);
