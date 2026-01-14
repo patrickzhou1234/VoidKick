@@ -710,6 +710,7 @@ io.on('connection', (socket) => {
             players[socket.id].droneChargeLevel = movementData.droneChargeLevel;
             players[socket.id].clothChargeLevel = movementData.clothChargeLevel;
             players[socket.id].grappleChargeLevel = movementData.grappleChargeLevel;
+            players[socket.id].waterBalloonChargeLevel = movementData.waterBalloonChargeLevel;
             players[socket.id].isDroneMode = movementData.isDroneMode;
             players[socket.id].droneX = movementData.droneX;
             players[socket.id].droneY = movementData.droneY;
@@ -733,6 +734,7 @@ io.on('connection', (socket) => {
                 droneChargeLevel: players[socket.id].droneChargeLevel,
                 clothChargeLevel: players[socket.id].clothChargeLevel,
                 grappleChargeLevel: players[socket.id].grappleChargeLevel,
+                waterBalloonChargeLevel: players[socket.id].waterBalloonChargeLevel,
                 isDroneMode: players[socket.id].isDroneMode,
                 droneX: players[socket.id].droneX,
                 droneY: players[socket.id].droneY,
@@ -994,6 +996,42 @@ io.on('connection', (socket) => {
                 pullerY: pullData.pullerY,
                 pullerZ: pullData.pullerZ
             });
+        }
+    });
+
+    // Skibidi Toilet Water Balloon ability - flying started
+    socket.on('waterBalloonFlyStart', (flyData) => {
+        flyData.playerId = socket.id;
+        if (players[socket.id]) {
+            const roomId = players[socket.id].roomId;
+            socket.to(roomId).emit('waterBalloonFlyStart', flyData);
+        }
+    });
+
+    // Skibidi Toilet Water Balloon ability - flying ended
+    socket.on('waterBalloonFlyEnd', () => {
+        if (players[socket.id]) {
+            const roomId = players[socket.id].roomId;
+            socket.to(roomId).emit('waterBalloonFlyEnd', { playerId: socket.id });
+        }
+    });
+
+    // Skibidi Toilet Water Balloon ability - balloon dropped
+    socket.on('waterBalloonDrop', (balloonData) => {
+        balloonData.playerId = socket.id;
+        if (players[socket.id]) {
+            const roomId = players[socket.id].roomId;
+            socket.to(roomId).emit('waterBalloonDropped', balloonData);
+        }
+    });
+
+    // Skibidi Toilet Water Balloon ability - pool created on impact
+    socket.on('waterBalloonPoolCreated', (poolData) => {
+        poolData.playerId = socket.id;
+        if (players[socket.id]) {
+            const roomId = players[socket.id].roomId;
+            // Broadcast to ALL players in room so everyone sees and can be slowed by the pool
+            socket.to(roomId).emit('waterBalloonPoolCreated', poolData);
         }
     });
 

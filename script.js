@@ -1005,6 +1005,24 @@ const GRAPPLE_HOOK_SPEED = 1.5; // Hook travel speed per frame
 const GRAPPLE_PULL_SPEED = 0.8; // Retraction speed
 const GRAPPLE_RELEASE_DISTANCE = 2.0; // Auto-release when within this distance
 
+// Water Balloon Fly state (exclusive to Skibidi Toilet skin)
+let isChargingWaterBalloon = false;
+let waterBalloonCharge = 0;
+let waterBalloonChargingMesh = null;
+let isWaterBalloonFlying = false;
+let waterBalloonFlyingTimer = null;
+let waterBalloonDropInterval = null;
+let originalPlayerGravity = null; // Store original gravity during flight
+let activeSlowingPools = []; // Track active pools for collision detection
+const WATER_BALLOON_CHARGE_TIME = 2000; // 2 seconds to charge
+const WATER_BALLOON_CHARGE_RATE = 100 / (WATER_BALLOON_CHARGE_TIME / 16.67);
+const WATER_BALLOON_FLY_DURATION = 20000; // 15 seconds of flying
+const WATER_BALLOON_FLY_HEIGHT = 15; // Height to fly at
+const WATER_BALLOON_FLY_SPEED = 0.6; // Movement speed in fixed pattern
+const WATER_BALLOON_DROP_INTERVAL = 800; // Drop every 0.8s
+const WATER_BALLOON_POOL_DURATION = 10000; // Pools last 10 seconds
+const WATER_BALLOON_SLOW_FACTOR = 0.01; // Movement speed multiplier when in pool
+
 // Preloaded 3D models
 const DRONE_MODEL_URL = "https://files.catbox.moe/z7hxt9.glb";
 const ULTIMATE_MODEL_URL = "https://files.catbox.moe/84ufxa.glb";
@@ -1015,6 +1033,7 @@ const GRENADE_MODEL_URL = "https://files.catbox.moe/nmw7yv.glb";
 const MINE_MODEL_URL = "https://files.catbox.moe/qmnt2u.glb";
 const SHIELD_BUBBLE_MODEL_URL = "https://files.catbox.moe/i5d8fc.glb"; // TODO: Replace with actual shield bubble model
 const KNOCKBACK_EXPLOSION_MODEL_URL = "https://dl.dropboxusercontent.com/scl/fi/3bfqc1g8l59zd83axg3kk/flame__test.glb?rlkey=1i9jbvz516f1poghtj0w4h08t&st=s7qz0834&dl=1";
+const WATER_BALLOON_MODEL_URL = "https://files.catbox.moe/np2dou.glb"; // TODO: Replace with actual water balloon model
 
 // ============ MAP SYSTEM ============
 // Map configurations - .babylon files for custom arenas
@@ -1134,6 +1153,12 @@ const SKIN_CONFIGS = {
         rotation: [0, 0, 0],
         scaling: [1, 1, 1],
         offset: [0, 0, 0]
+    },
+    'skibidi toilet': {
+        url: 'https://files.catbox.moe/afu46a.glb', // Placeholder URL
+        rotation: [0, 0, 0],
+        scaling: [3, 3, 3],
+        offset: [0, 0, 0]
     }
 };
 
@@ -1149,7 +1174,8 @@ const AVAILABLE_SKINS = [
     { id: 'beavis', name: 'Beavis', icon: '👨‍🦳' },
     { id: 'homer', name: 'Homer', icon: '👴' },
     { id: 'patrick simpson', name: 'Patrick Simpson', icon: '🍩' },
-    { id: 'peter griffin', name: 'Peter Griffin', icon: '🍔' }
+    { id: 'peter griffin', name: 'Peter Griffin', icon: '🍔' },
+    { id: 'skibidi toilet', name: 'Skibidi Toilet', icon: '🚽' }
 ];
 
 // Currently selected skin
@@ -1177,6 +1203,7 @@ const MODELS_TO_CACHE = [
     { name: 'mine', url: MINE_MODEL_URL },
     { name: 'shieldBubble', url: SHIELD_BUBBLE_MODEL_URL },
     { name: 'knockbackExplosion', url: KNOCKBACK_EXPLOSION_MODEL_URL },
+    { name: 'waterBalloon', url: WATER_BALLOON_MODEL_URL },
     // Skin models (only add non-null skin URLs)
     ...Object.entries(SKIN_MODEL_URLS)
         .filter(([id, url]) => url !== null)
@@ -3180,6 +3207,71 @@ var createScene = function () {
             }
         }
         
+        // Water Balloon charging (Skibidi Toilet skin only)
+        if (isChargingWaterBalloon && !isDead && !isDroneMode && selectedSkin === 'skibidi toilet') {
+            waterBalloonCharge = Math.min(waterBalloonCharge + WATER_BALLOON_CHARGE_RATE, 100);
+            
+            // Both arms up while charging (preparing to fly)
+            if (player.leftArm && player.rightArm) {
+                player.leftArm.rotation.x = -1.8;
+                player.rightArm.rotation.x = -1.8;
+                player.leftArm.rotation.z = 0.6;
+                player.rightArm.rotation.z = -0.6;
+            }
+            
+            // Create or update charging visual (blue glow around player)
+            if (!waterBalloonChargingMesh) {
+                waterBalloonChargingMesh = BABYLON.MeshBuilder.CreateTorus("waterBalloonCharging", {
+                    diameter: 2,
+                    thickness: 0.15,
+                    tessellation: 24
+                }, scene);
+                const chargeMat = new BABYLON.StandardMaterial("waterBalloonChargeMat", scene);
+                chargeMat.diffuseColor = new BABYLON.Color3(0.2, 0.5, 1);
+                chargeMat.emissiveColor = new BABYLON.Color3(0.1, 0.3, 0.6);
+                chargeMat.alpha = 0.7;
+                waterBalloonChargingMesh.material = chargeMat;
+            }
+            
+            // Scale and rotate based on charge
+            const chargePercent = waterBalloonCharge / 100;
+            waterBalloonChargingMesh.scaling.setAll(0.5 + chargePercent * 0.5);
+            waterBalloonChargingMesh.rotation.y += 0.1;
+            waterBalloonChargingMesh.position.copyFrom(playerPhysicsBody.position);
+            waterBalloonChargingMesh.position.y += 0.5;
+            
+            // Glow more as charge increases
+            waterBalloonChargingMesh.material.emissiveColor = new BABYLON.Color3(
+                0.1 + chargePercent * 0.2,
+                0.3 + chargePercent * 0.3,
+                0.6 + chargePercent * 0.4
+            );
+            
+            const wbBar = document.getElementById('waterBalloonBar');
+            if (wbBar) wbBar.style.width = waterBalloonCharge + '%';
+            
+            const wbContainer = document.getElementById('waterBalloonContainer');
+            if (wbContainer) wbContainer.style.display = 'block';
+            
+            currentAnimState = 'charging';
+            
+            // Activate flying when fully charged
+            if (waterBalloonCharge >= 100) {
+                activateWaterBalloonFly();
+            }
+        }
+        
+        // Check if player is in slowing pool and apply slow effect
+        if (window.checkPlayerInSlowingPool && window.checkPlayerInSlowingPool()) {
+            // Apply slowing effect to movement velocity
+            if (playerPhysicsBody && playerPhysicsBody.physicsImpostor) {
+                const vel = playerPhysicsBody.physicsImpostor.getLinearVelocity();
+                vel.x *= WATER_BALLOON_SLOW_FACTOR;
+                vel.z *= WATER_BALLOON_SLOW_FACTOR;
+                playerPhysicsBody.physicsImpostor.setLinearVelocity(vel);
+            }
+        }
+        
         // Drone mode controls
         if (isDroneMode && droneMesh && droneCamera) {
             // Drone movement with WASD
@@ -3300,6 +3392,7 @@ var createScene = function () {
                         droneChargeLevel: isChargingDrone ? droneCharge : 0,
                         clothChargeLevel: isChargingCloth ? clothCharge : 0,
                         grappleChargeLevel: isChargingGrapple ? grappleCharge : 0,
+                        waterBalloonChargeLevel: isChargingWaterBalloon ? waterBalloonCharge : 0,
                         isDroneMode: isDroneMode,
                         droneX: droneMesh ? droneMesh.position.x : 0,
                         droneY: droneMesh ? droneMesh.position.y : 0,
@@ -4541,6 +4634,437 @@ var createScene = function () {
         currentAnimState = 'idle';
     };
     
+    // ============ SKIBIDI TOILET WATER BALLOON FLY ABILITY ============
+    
+    // Start charging water balloon (Skibidi Toilet only)
+    window.startChargingWaterBalloon = function() {
+        // Only works with Skibidi Toilet skin
+        if (selectedSkin !== 'skibidi toilet') {
+            return;
+        }
+        if (isDead || isChargingWaterBalloon || isWaterBalloonFlying || isDroneMode || 
+            isChargingUltimate || isChargingGrenade || isChargingDrone || isChargingCloth || 
+            isChargingGrapple || isGrappling || isSwingingBat) return;
+        
+        // Break spawn immunity when attacking
+        breakSpawnImmunity();
+        
+        isChargingWaterBalloon = true;
+        waterBalloonCharge = 0;
+        currentAnimState = 'charging';
+    };
+    
+    // Cancel water balloon charging
+    window.cancelWaterBalloon = function() {
+        if (isChargingWaterBalloon) {
+            isChargingWaterBalloon = false;
+            waterBalloonCharge = 0;
+            currentAnimState = 'idle';
+            
+            const wbContainer = document.getElementById('waterBalloonContainer');
+            if (wbContainer) wbContainer.style.display = 'none';
+            const wbBar = document.getElementById('waterBalloonBar');
+            if (wbBar) wbBar.style.width = '0%';
+            
+            if (waterBalloonChargingMesh) {
+                waterBalloonChargingMesh.dispose();
+                waterBalloonChargingMesh = null;
+            }
+            
+            resetPlayerArms();
+        }
+    };
+    
+    // Activate water balloon flying mode
+    window.activateWaterBalloonFly = function() {
+        if (!isChargingWaterBalloon) return;
+        
+        // Cleanup charging state
+        isChargingWaterBalloon = false;
+        waterBalloonCharge = 0;
+        
+        const wbContainer = document.getElementById('waterBalloonContainer');
+        if (wbContainer) wbContainer.style.display = 'none';
+        
+        if (waterBalloonChargingMesh) {
+            waterBalloonChargingMesh.dispose();
+            waterBalloonChargingMesh = null;
+        }
+        
+        // Start flying mode
+        isWaterBalloonFlying = true;
+        
+        // Store original position for fixed pattern flying
+        const startX = playerPhysicsBody.position.x;
+        const startZ = playerPhysicsBody.position.z;
+        let flyingTime = 0;
+        const riseSpeed = 0.2; // Speed to rise to flying height
+        
+        // Disable normal physics by setting mass to 0 temporarily
+        // We'll control position directly
+        originalPlayerGravity = playerPhysicsBody.physicsImpostor.getLinearVelocity().clone();
+        playerPhysicsBody.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
+        
+        // Don't teleport - let flying observer handle smooth rise
+        
+        // Show flying indicator
+        const flyingIndicator = document.getElementById('waterBalloonFlyingIndicator');
+        if (flyingIndicator) flyingIndicator.style.display = 'block';
+        
+        // Emit flying start to server for other players to see
+        socket.emit('waterBalloonFlyStart', {
+            x: playerPhysicsBody.position.x,
+            y: playerPhysicsBody.position.y,
+            z: playerPhysicsBody.position.z
+        });
+        
+        // Enemy tracking flying pattern - follows nearest enemy player
+        // Use lerp for ultra-smooth movement
+        let currentVelX = 0;
+        let currentVelZ = 0;
+        let wobbleOffsetX = 0;
+        let wobbleOffsetZ = 0;
+        
+        const flyingObserver = scene.onBeforeRenderObservable.add(() => {
+            if (!isWaterBalloonFlying) {
+                scene.onBeforeRenderObservable.remove(flyingObserver);
+                return;
+            }
+            
+            flyingTime += 0.016; // Approximate frame time
+            
+            // Add gentle random wobble for natural flight feel
+            wobbleOffsetX = Math.sin(flyingTime * 2.5) * 0.3 + Math.sin(flyingTime * 1.3) * 0.15;
+            wobbleOffsetZ = Math.cos(flyingTime * 2.1) * 0.3 + Math.cos(flyingTime * 1.7) * 0.15;
+            
+            // Smoothly rise to flying height using lerp (not instant teleport)
+            const currentY = playerPhysicsBody.position.y;
+            const targetY = WATER_BALLOON_FLY_HEIGHT + Math.sin(flyingTime * 1.5) * 0.5; // Gentle bobbing
+            playerPhysicsBody.position.y += (targetY - currentY) * 0.03; // Very gradual lerp
+            
+            // Find nearest enemy player to track
+            let targetX = playerPhysicsBody.position.x;
+            let targetZ = playerPhysicsBody.position.z;
+            let hasTarget = false;
+            let nearestDist = Infinity;
+            
+            Object.values(otherPlayers).forEach(p => {
+                if (p.mesh && !p.mesh.isDisposed()) {
+                    const dx = p.mesh.position.x - playerPhysicsBody.position.x;
+                    const dz = p.mesh.position.z - playerPhysicsBody.position.z;
+                    const dist = Math.sqrt(dx * dx + dz * dz);
+                    if (dist < nearestDist) {
+                        nearestDist = dist;
+                        targetX = p.mesh.position.x;
+                        targetZ = p.mesh.position.z;
+                        hasTarget = true;
+                    }
+                }
+            });
+            
+            const currentX = playerPhysicsBody.position.x;
+            const currentZ = playerPhysicsBody.position.z;
+            
+            if (hasTarget) {
+                // Calculate desired velocity towards enemy
+                const dx = targetX - currentX;
+                const dz = targetZ - currentZ;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                
+                if (dist > 0.5) {
+                    // Desired velocity direction
+                    const desiredVelX = (dx / dist) * WATER_BALLOON_FLY_SPEED;
+                    const desiredVelZ = (dz / dist) * WATER_BALLOON_FLY_SPEED;
+                    
+                    // Lerp current velocity towards desired (very gradual acceleration)
+                    currentVelX += (desiredVelX - currentVelX) * 0.02;
+                    currentVelZ += (desiredVelZ - currentVelZ) * 0.02;
+                } else {
+                    // Slow down when near target
+                    currentVelX *= 0.95;
+                    currentVelZ *= 0.95;
+                }
+            } else {
+                // No enemies - do gentle wandering patrol
+                const patrolRadius = 4;
+                const patrolSpeed = 0.2;
+                const patrolTargetX = startX + Math.cos(flyingTime * patrolSpeed) * patrolRadius;
+                const patrolTargetZ = startZ + Math.sin(flyingTime * patrolSpeed) * patrolRadius;
+                
+                // Gradual velocity towards patrol position
+                const dxPatrol = patrolTargetX - currentX;
+                const dzPatrol = patrolTargetZ - currentZ;
+                currentVelX += (dxPatrol * 0.01 - currentVelX) * 0.02;
+                currentVelZ += (dzPatrol * 0.01 - currentVelZ) * 0.02;
+            }
+            
+            // Apply velocity with wobble
+            playerPhysicsBody.position.x += currentVelX + wobbleOffsetX * 0.02;
+            playerPhysicsBody.position.z += currentVelZ + wobbleOffsetZ * 0.02;
+            
+            // Kill any physics velocity during flight
+            playerPhysicsBody.physicsImpostor.setLinearVelocity(new BABYLON.Vector3(0, 0, 0));
+        });
+        
+        window.waterBalloonFlyingObserver = flyingObserver;
+        
+        // Start dropping balloons at interval
+        waterBalloonDropInterval = setInterval(() => {
+            if (isWaterBalloonFlying) {
+                dropWaterBalloon();
+            }
+        }, WATER_BALLOON_DROP_INTERVAL);
+        
+        // Set timer to stop flying after duration
+        waterBalloonFlyingTimer = setTimeout(() => {
+            stopWaterBalloonFlying();
+        }, WATER_BALLOON_FLY_DURATION);
+        
+        currentAnimState = 'idle';
+    };
+    
+    // Stop flying mode
+    window.stopWaterBalloonFlying = function() {
+        if (!isWaterBalloonFlying) return;
+        
+        isWaterBalloonFlying = false;
+        
+        // Clear timers
+        if (waterBalloonFlyingTimer) {
+            clearTimeout(waterBalloonFlyingTimer);
+            waterBalloonFlyingTimer = null;
+        }
+        if (waterBalloonDropInterval) {
+            clearInterval(waterBalloonDropInterval);
+            waterBalloonDropInterval = null;
+        }
+        
+        // Remove flying observer
+        if (window.waterBalloonFlyingObserver) {
+            scene.onBeforeRenderObservable.remove(window.waterBalloonFlyingObserver);
+            window.waterBalloonFlyingObserver = null;
+        }
+        
+        // Hide flying indicator
+        const flyingIndicator = document.getElementById('waterBalloonFlyingIndicator');
+        if (flyingIndicator) flyingIndicator.style.display = 'none';
+        
+        // Emit flying end to server
+        socket.emit('waterBalloonFlyEnd');
+    };
+    
+    // Drop a water balloon
+    function dropWaterBalloon() {
+        const dropPos = playerPhysicsBody.position.clone();
+        
+        // Create water balloon mesh (invisible physics collider)
+        const balloon = BABYLON.MeshBuilder.CreateSphere("waterBalloon_" + Date.now(), {
+            diameter: 0.6,
+            segments: 12
+        }, scene);
+        balloon.position.copyFrom(dropPos);
+        balloon.position.y -= 0.5; // Drop from below player
+        
+        // Blue water balloon material (fallback visual)
+        const balloonMat = new BABYLON.StandardMaterial("waterBalloonMat_" + Date.now(), scene);
+        balloonMat.diffuseColor = new BABYLON.Color3(0.2, 0.5, 0.9);
+        balloonMat.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.5);
+        balloonMat.alpha = 0.8;
+        balloon.material = balloonMat;
+        
+        // Try to load 3D model (will use fallback sphere if model doesn't exist)
+        loadCachedMesh('waterBalloon', scene, function(meshes) {
+            if (meshes.length > 0 && balloon && !balloon.isDisposed()) {
+                balloon.visibility = 0; // Hide fallback sphere
+                const balloonModel = new BABYLON.TransformNode("waterBalloonModel", scene);
+                
+                meshes.forEach(mesh => {
+                    mesh.parent = balloonModel;
+                    mesh.isPickable = false;
+                });
+                
+                balloonModel.parent = balloon;
+                balloonModel.position = new BABYLON.Vector3(0, 0, 0);
+                balloonModel.scaling = new BABYLON.Vector3(0.03, 0.03, 0.03);
+                balloonModel.rotation = new BABYLON.Vector3(-Math.PI / 2, 0, 0);
+                balloon.balloonModel = balloonModel;
+            }
+        }, null, function(scene, message, exception) {
+            // Model failed to load, use fallback sphere (already visible)
+            console.log("Using fallback water balloon sphere");
+        });
+        
+        // Add physics for falling
+        balloon.physicsImpostor = new BABYLON.PhysicsImpostor(
+            balloon,
+            BABYLON.PhysicsImpostor.SphereImpostor,
+            {mass: 0.5, restitution: 0.1},
+            scene
+        );
+        
+        // Emit to server for other players
+        socket.emit('waterBalloonDrop', {
+            x: balloon.position.x,
+            y: balloon.position.y,
+            z: balloon.position.z
+        });
+        
+        // Check for ground collision
+        const groundMesh = scene.getMeshByName('ground');
+        if (groundMesh && groundMesh.physicsImpostor) {
+            balloon.physicsImpostor.registerOnPhysicsCollide([groundMesh.physicsImpostor], () => {
+                // Create pool at impact position
+                const impactPos = balloon.position.clone();
+                impactPos.y = 0.05; // Just above ground
+                
+                createSlowingPool(impactPos, true);
+                
+                // Dispose balloon
+                if (balloon.balloonModel) {
+                    balloon.balloonModel.dispose();
+                }
+                balloon.dispose();
+            });
+        }
+        
+        // Fallback: remove after 5 seconds if no collision
+        setTimeout(() => {
+            if (balloon && !balloon.isDisposed()) {
+                if (balloon.balloonModel) {
+                    balloon.balloonModel.dispose();
+                }
+                balloon.dispose();
+            }
+        }, 5000);
+    }
+    
+    // Create slowing pool on ground
+    function createSlowingPool(position, isLocal) {
+        const pool = BABYLON.MeshBuilder.CreateDisc("slowingPool_" + Date.now(), {
+            radius: 2.5,
+            tessellation: 24
+        }, scene);
+        pool.position.copyFrom(position);
+        pool.position.y = 0.05; // Just above ground to avoid z-fighting
+        pool.rotation.x = Math.PI / 2; // Lay flat on ground
+        
+        // Blue water pool material
+        const poolMat = new BABYLON.StandardMaterial("poolMat_" + Date.now(), scene);
+        poolMat.diffuseColor = new BABYLON.Color3(0.55, 0.27, 0.07);
+        poolMat.emissiveColor = new BABYLON.Color3(0.55, 0.27, 0.07);
+        poolMat.alpha = 0.6;
+        poolMat.backFaceCulling = false;
+        pool.material = poolMat;
+        pool.isPickable = false;
+        
+        // Store pool for collision detection
+        pool.poolRadius = 2.5;
+        pool.createdAt = Date.now();
+        activeSlowingPools.push(pool);
+        
+        // Emit to server if this is local player's pool
+        if (isLocal) {
+            socket.emit('waterBalloonPoolCreated', {
+                x: position.x,
+                y: position.y,
+                z: position.z
+            });
+        }
+        
+        // Add splash effect
+        createPoolSplashEffect(position);
+        
+        // Remove pool after duration
+        setTimeout(() => {
+            const idx = activeSlowingPools.indexOf(pool);
+            if (idx > -1) {
+                activeSlowingPools.splice(idx, 1);
+            }
+            
+            // Fade out effect
+            let fadeAlpha = 0.6;
+            const fadeInterval = setInterval(() => {
+                fadeAlpha -= 0.1;
+                if (fadeAlpha <= 0 || pool.isDisposed()) {
+                    clearInterval(fadeInterval);
+                    if (!pool.isDisposed()) {
+                        pool.dispose();
+                    }
+                } else {
+                    poolMat.alpha = fadeAlpha;
+                }
+            }, 100);
+        }, WATER_BALLOON_POOL_DURATION);
+    }
+    
+    // Create splash particle effect
+    function createPoolSplashEffect(position) {
+        // Create small spheres that fly up and out
+        for (let i = 0; i < 8; i++) {
+            const splash = BABYLON.MeshBuilder.CreateSphere("splash_" + i, {
+                diameter: 0.15,
+                segments: 6
+            }, scene);
+            splash.position.copyFrom(position);
+            
+            const splashMat = new BABYLON.StandardMaterial("splashMat_" + i, scene);
+            splashMat.diffuseColor = new BABYLON.Color3(0.3, 0.6, 1);
+            splashMat.emissiveColor = new BABYLON.Color3(0.15, 0.3, 0.5);
+            splashMat.alpha = 0.7;
+            splash.material = splashMat;
+            
+            // Random velocity outward and up
+            const angle = (i / 8) * Math.PI * 2;
+            const vx = Math.cos(angle) * 0.15;
+            const vz = Math.sin(angle) * 0.15;
+            const vy = 0.3;
+            
+            let time = 0;
+            const splashObserver = scene.onBeforeRenderObservable.add(() => {
+                time += 0.016;
+                splash.position.x += vx;
+                splash.position.z += vz;
+                splash.position.y += vy - (time * 0.5); // Gravity
+                splashMat.alpha -= 0.05;
+                
+                if (splashMat.alpha <= 0 || time > 0.5) {
+                    scene.onBeforeRenderObservable.remove(splashObserver);
+                    splash.dispose();
+                }
+            });
+        }
+    }
+    
+    // Check if player is standing in a slowing pool
+    // Returns false for Skibidi Toilet players (immune to own puddles)
+    function checkPlayerInSlowingPool() {
+        if (!playerPhysicsBody || isDead || isWaterBalloonFlying) return false;
+        
+        // Skibidi Toilet players are immune to puddle slowing
+        if (selectedSkin === 'skibidi toilet') return false;
+        
+        const playerPos = playerPhysicsBody.position;
+        
+        for (const pool of activeSlowingPools) {
+            if (!pool || pool.isDisposed()) continue;
+            
+            const dx = playerPos.x - pool.position.x;
+            const dz = playerPos.z - pool.position.z;
+            const distXZ = Math.sqrt(dx * dx + dz * dz);
+            
+            // Check if player is within pool radius and near ground level
+            if (distXZ < pool.poolRadius && playerPos.y < 2) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    // Expose for render loop
+    window.checkPlayerInSlowingPool = checkPlayerInSlowingPool;
+    window.createSlowingPool = createSlowingPool;
+    
     // Launch drone after charging
     window.launchDrone = function() {
         isChargingDrone = false;
@@ -5282,7 +5806,7 @@ function addOtherPlayer(playerInfo) {
 }
 
 // Apply animation to other player's character
-function applyOtherPlayerAnimation(playerData, animState, chargeLevel, grenadeChargeLevel, droneChargeLevel, clothChargeLevel, grappleChargeLevel) {
+function applyOtherPlayerAnimation(playerData, animState, chargeLevel, grenadeChargeLevel, droneChargeLevel, clothChargeLevel, grappleChargeLevel, waterBalloonChargeLevel) {
     const mesh = playerData.mesh;
     if (!mesh || !mesh.leftArm || !mesh.rightArm) return;
     
@@ -5290,6 +5814,7 @@ function applyOtherPlayerAnimation(playerData, animState, chargeLevel, grenadeCh
     droneChargeLevel = droneChargeLevel || 0;
     clothChargeLevel = clothChargeLevel || 0;
     grappleChargeLevel = grappleChargeLevel || 0;
+    waterBalloonChargeLevel = waterBalloonChargeLevel || 0;
     
     // Handle ultimate charging ball
     if (animState === 'charging' && chargeLevel > 0) {
@@ -5534,8 +6059,54 @@ function applyOtherPlayerAnimation(playerData, animState, chargeLevel, grenadeCh
         }
     }
     
+    // Handle water balloon charging (Skibidi Toilet ability - blue spinning torus around player)
+    if (animState === 'charging' && waterBalloonChargeLevel > 0) {
+        // Create or update water balloon charging visual
+        if (!playerData.waterBalloonChargingMesh) {
+            playerData.waterBalloonChargingMesh = BABYLON.MeshBuilder.CreateTorus("otherWaterBalloonCharging", {
+                diameter: 2,
+                thickness: 0.15,
+                tessellation: 24
+            }, scene);
+            const chargeMat = new BABYLON.StandardMaterial("otherWaterBalloonChargeMat", scene);
+            chargeMat.diffuseColor = new BABYLON.Color3(0.2, 0.5, 1);
+            chargeMat.emissiveColor = new BABYLON.Color3(0.1, 0.3, 0.6);
+            chargeMat.alpha = 0.7;
+            playerData.waterBalloonChargingMesh.material = chargeMat;
+        }
+        
+        // Size and glow based on charge
+        const chargePercent = waterBalloonChargeLevel / 100;
+        playerData.waterBalloonChargingMesh.scaling.setAll(0.5 + chargePercent * 0.5);
+        playerData.waterBalloonChargingMesh.rotation.y += 0.1; // Spin effect
+        
+        // Glow more as charge increases
+        playerData.waterBalloonChargingMesh.material.emissiveColor = new BABYLON.Color3(
+            0.1 + chargePercent * 0.2,
+            0.3 + chargePercent * 0.3,
+            0.6 + chargePercent * 0.4
+        );
+        
+        // Position around character
+        playerData.waterBalloonChargingMesh.position.x = mesh.position.x;
+        playerData.waterBalloonChargingMesh.position.y = mesh.position.y + 0.5;
+        playerData.waterBalloonChargingMesh.position.z = mesh.position.z;
+        
+        // Arms up (preparing to fly)
+        mesh.leftArm.rotation.x = -1.8;
+        mesh.rightArm.rotation.x = -1.8;
+        mesh.leftArm.rotation.z = 0.6;
+        mesh.rightArm.rotation.z = -0.6;
+    } else {
+        // Dispose water balloon charging mesh if not charging
+        if (playerData.waterBalloonChargingMesh) {
+            playerData.waterBalloonChargingMesh.dispose();
+            playerData.waterBalloonChargingMesh = null;
+        }
+    }
+    
     // Handle other animations when not charging anything
-    if (!(animState === 'charging' && (chargeLevel > 0 || grenadeChargeLevel > 0 || droneChargeLevel > 0 || clothChargeLevel > 0 || grappleChargeLevel > 0))) {
+    if (!(animState === 'charging' && (chargeLevel > 0 || grenadeChargeLevel > 0 || droneChargeLevel > 0 || clothChargeLevel > 0 || grappleChargeLevel > 0 || waterBalloonChargeLevel > 0))) {
         if (animState === 'shooting') {
             // One arm punch
             mesh.rightArm.rotation.x = -1.2;
@@ -5679,7 +6250,7 @@ socket.on('playerMoved', (playerInfo) => {
         p.targetZ = p.serverZ;
         
         // Apply animation state immediately
-        applyOtherPlayerAnimation(p, playerInfo.animState || 'idle', playerInfo.chargeLevel || 0, playerInfo.grenadeChargeLevel || 0, playerInfo.droneChargeLevel || 0, playerInfo.clothChargeLevel || 0, playerInfo.grappleChargeLevel || 0);
+        applyOtherPlayerAnimation(p, playerInfo.animState || 'idle', playerInfo.chargeLevel || 0, playerInfo.grenadeChargeLevel || 0, playerInfo.droneChargeLevel || 0, playerInfo.clothChargeLevel || 0, playerInfo.grappleChargeLevel || 0, playerInfo.waterBalloonChargeLevel || 0);
         
         // Handle other player's drone
         if (playerInfo.isDroneMode) {
@@ -6866,6 +7437,69 @@ socket.on('beingGrapplePulled', (pullData) => {
     }
 });
 
+// Receive water balloon dropped by another player (Skibidi Toilet ability)
+socket.on('waterBalloonDropped', (balloonData) => {
+    // Create falling water balloon mesh (invisible physics collider)
+    const balloon = BABYLON.MeshBuilder.CreateSphere("otherWaterBalloon_" + Date.now(), {
+        diameter: 0.6,
+        segments: 12
+    }, scene);
+    balloon.position.set(balloonData.x, balloonData.y, balloonData.z);
+    balloon.visibility = 0; // Hide physics sphere, show 3D model
+    
+    // Try to load 3D model
+    loadCachedMesh('waterBalloon', scene, function(meshes) {
+        if (meshes.length > 0 && balloon && !balloon.isDisposed()) {
+            const balloonModel = new BABYLON.TransformNode("otherWaterBalloonModel", scene);
+            
+            meshes.forEach(mesh => {
+                mesh.parent = balloonModel;
+                mesh.isPickable = false;
+            });
+            
+            balloonModel.parent = balloon;
+            balloonModel.position = new BABYLON.Vector3(0, 0, 0);
+            balloonModel.scaling = new BABYLON.Vector3(0.03, 0.03, 0.03);
+            balloonModel.rotation = new BABYLON.Vector3(-Math.PI / 2, 0, 0);
+            balloon.balloonModel = balloonModel;
+        }
+    }, null, function(scene, message, exception) {
+        // Model failed to load - show fallback blue sphere
+        balloon.visibility = 1;
+        const balloonMat = new BABYLON.StandardMaterial("otherWaterBalloonMat_" + Date.now(), scene);
+        balloonMat.diffuseColor = new BABYLON.Color3(0.2, 0.5, 0.9);
+        balloonMat.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.5);
+        balloonMat.alpha = 0.8;
+        balloon.material = balloonMat;
+    });
+    
+    // Add physics for falling
+    balloon.physicsImpostor = new BABYLON.PhysicsImpostor(
+        balloon,
+        BABYLON.PhysicsImpostor.SphereImpostor,
+        {mass: 0.5, restitution: 0.1},
+        scene
+    );
+    
+    // Remove after 5 seconds
+    setTimeout(() => {
+        if (balloon && !balloon.isDisposed()) {
+            if (balloon.balloonModel) {
+                balloon.balloonModel.dispose();
+            }
+            balloon.dispose();
+        }
+    }, 5000);
+});
+
+// Receive water balloon pool created by another player
+socket.on('waterBalloonPoolCreated', (poolData) => {
+    const position = new BABYLON.Vector3(poolData.x, poolData.y, poolData.z);
+    if (window.createSlowingPool) {
+        window.createSlowingPool(position, false);
+    }
+});
+
 // Helper function to spawn block
 function spawnBlock(data) {
     var mesh;
@@ -7265,8 +7899,12 @@ document.addEventListener('keydown', function(event) {
         isThirdPerson = !isThirdPerson;
     }
 
-    // Jump - only works when grounded and NOT in drone mode
+    // Jump - only works when grounded and NOT in drone mode and NOT in slowing pool
     if (event.code === "Space" && !isDroneMode) {
+        // Block jumping if player is in a slowing pool
+        if (window.checkPlayerInSlowingPool && window.checkPlayerInSlowingPool()) {
+            return; // Can't jump in puddle!
+        }
         // Only allow jump if playerCanJump is true (set by render loop when grounded)
         if (playerCanJump) {
             playerCanJump = false; // Immediately prevent double jump
@@ -7308,9 +7946,11 @@ document.addEventListener('keydown', function(event) {
         window.startChargingCloth();
     }
     
-    // Patrick Grapple Hook ability - hold G to charge (only works with Patrick skin)
+    // Patrick Grapple Hook ability OR Skibidi Toilet Water Balloon - hold G to charge
+    // (skin-specific, only one will activate based on selected skin)
     if (event.code === "KeyG") {
         window.startChargingGrapple();
+        window.startChargingWaterBalloon();
     }
 });
 
@@ -7345,9 +7985,10 @@ document.addEventListener('keyup', function(event) {
         window.cancelCloth();
     }
     
-    // Cancel grapple if G is released before fully charged (Patrick ability)
+    // Cancel grapple OR water balloon if G is released before fully charged
     if (event.code === "KeyG") {
         window.cancelGrapple();
+        window.cancelWaterBalloon();
     }
 });
 
